@@ -157,11 +157,11 @@ private fun czMoney(v: String): String {
     return n.toString().reversed().chunked(3).joinToString(" ").reversed() + " Kč"
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 private val PHOTO_EMP = listOf("employer_name" to "Zaměstnavatel", "income" to "Úhrn zúčtovaných příjmů", "advances" to "Sražené zálohy", "bonuses" to "Vyplacené bonusy")
 private val PHOTO_OSVC = listOf("osvc_income" to "Příjmy z podnikání", "osvc_expenses" to "Výdaje", "flat_rate" to "Paušál %", "assessment_base" to "Vyměřovací základ",
                                 "advances_paid" to "Zaplacené zálohy", "difference" to "Nedoplatek / přeplatek", "new_advance" to "Nová měsíční záloha", "new_advance_from" to "Platí od (RRRR-MM)")
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaxWizardScreen(nav: Navigator, id: String) {
     val form = remember { mutableStateMapOf<String, String>() }

@@ -33,6 +33,8 @@ data class OutboxItem(
     val direction: String? = null,
     /** Text QR platby (SPD) přečtený z dokladu v telefonu. */
     val qr: String? = null,
+    /** faktura | uctenka (režim Účtenky) */
+    val docType: String? = null,
 )
 
 object Outbox {
@@ -63,6 +65,7 @@ object Outbox {
         job: String? = null,
         direction: String? = null,
         qr: String? = null,
+        docType: String? = null,
     ): OutboxItem = mutex.withLock {
         val now = Clock.System.now().toEpochMilliseconds()
         val id = "$now-${(1000..9999).random()}"
@@ -70,7 +73,7 @@ object Outbox {
         LocalFiles.write(orig, original)
         val proc = processed?.let { "outbox_${id}_processed".also { name -> LocalFiles.write(name, it) } }
         val item = OutboxItem(id, Api.companyId, orig, originalMime, originalName, proc, note, now,
-            stage = stage, costCenter = costCenter, job = job, direction = direction, qr = qr)
+            stage = stage, costCenter = costCenter, job = job, direction = direction, qr = qr, docType = docType)
         save(items + item)
         item
     }
@@ -95,6 +98,7 @@ object Outbox {
                 job = item.job,
                 direction = item.direction,
                 qr = item.qr,
+                docType = item.docType,
             )
             remove(item)
             doc

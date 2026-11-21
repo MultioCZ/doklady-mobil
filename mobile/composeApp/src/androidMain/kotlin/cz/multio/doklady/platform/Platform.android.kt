@@ -41,8 +41,16 @@ object AndroidPlatform {
     lateinit var context: Context
         private set
 
+    /** Aktuální obrazovka (pro systémová okna: otisk prstu, přístupové klíče). */
+    private var activityRef: java.lang.ref.WeakReference<Activity>? = null
+    val activity: Activity? get() = activityRef?.get()
+
     fun init(ctx: Context) {
         context = ctx.applicationContext
+    }
+
+    fun attach(activity: Activity?) {
+        activityRef = activity?.let { java.lang.ref.WeakReference(it) }
     }
 }
 
@@ -79,7 +87,7 @@ fun readPicked(ctx: Context, uri: Uri): PickedDocument? {
  * Vše běží v telefonu přes Google Play služby, aplikace nepotřebuje oprávnění ke kameře.
  */
 @Composable
-actual fun rememberDocumentScanner(onResult: (PickedDocument?) -> Unit): () -> Unit {
+actual fun rememberDocumentScanner(pageLimit: Int, onResult: (PickedDocument?) -> Unit): () -> Unit {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res: ActivityResult ->
         if (res.resultCode != Activity.RESULT_OK) {
@@ -93,12 +101,12 @@ actual fun rememberDocumentScanner(onResult: (PickedDocument?) -> Unit): () -> U
         val pdf = result.pdf?.uri?.let { readBytes(context, it) }
         onResult(if (pages.isEmpty() && pdf == null) null else PickedDocument(pages, pdf))
     }
-    val scanner = remember {
+    val scanner = remember(pageLimit) {
         GmsDocumentScanning.getClient(
             GmsDocumentScannerOptions.Builder()
                 .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
                 .setGalleryImportAllowed(true)
-                .setPageLimit(10)
+                .setPageLimit(pageLimit.coerceIn(1, 100))
                 .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG, GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
                 .build()
         )
@@ -125,12 +133,27 @@ actual fun rememberFilePicker(onResult: (PickedDocument?) -> Unit): () -> Unit {
     return { launcher.launch(arrayOf("image/jpeg", "image/png", "image/webp", "application/pdf")) }
 }
 
-actual fun decodeImage(bytes: ByteArray): ImageBitmap? {
+@Composable
+actual fun rememberStatementPicker(onResult: (List<PickedFile>) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        onResult(uris.take(6).mapNotNull { uri ->
+            val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            } ?: "vypis"
+            val data = readBytes(context, uri) ?: return@mapNotNull null
+            PickedFile(data, context.contentResolver.getType(uri) ?: "application/octet-stream", name)
+        })
+    }
+    return { launcher.launch(arrayOf("*/*")) }
+}
+
+actual fun decodeImage(bytes: ByteArray, maxSize: Int): ImageBitmap? {
     // velké fotky zmenšit, ať nedojde paměť
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2400) sample *= 2
+    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxSize) sample *= 2
     val opts = BitmapFactory.Options().apply { inSampleSize = sample }
     return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
 }

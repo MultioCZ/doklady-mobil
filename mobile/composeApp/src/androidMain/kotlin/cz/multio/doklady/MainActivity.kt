@@ -4,7 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
+import cz.multio.doklady.data.AppLock
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import cz.multio.doklady.platform.AndroidPlatform
@@ -12,13 +13,32 @@ import cz.multio.doklady.platform.IncomingLink
 import cz.multio.doklady.platform.IncomingShare
 import cz.multio.doklady.platform.readPicked
 
-class MainActivity : ComponentActivity() {
+/** FragmentActivity kvůli systémovému oknu otisku prstu (BiometricPrompt). */
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         AndroidPlatform.init(applicationContext)
+        AndroidPlatform.attach(this)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) AppLock.init()
         handleShare(intent)
         setContent { App() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        AndroidPlatform.attach(this)
+        AppLock.onForeground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) AppLock.onBackground()
+    }
+
+    override fun onDestroy() {
+        if (AndroidPlatform.activity === this) AndroidPlatform.attach(null)
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

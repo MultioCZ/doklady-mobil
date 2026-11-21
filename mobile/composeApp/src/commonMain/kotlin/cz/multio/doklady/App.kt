@@ -36,6 +36,21 @@ import cz.multio.doklady.ui.TaxWizardScreen
 import cz.multio.doklady.ui.TripsScreen
 import cz.multio.doklady.ui.NewTripScreen
 import cz.multio.doklady.ui.OdometerScreen
+import cz.multio.doklady.ui.BankItemScreen
+import cz.multio.doklady.ui.DokladyTheme
+import cz.multio.doklady.ui.InvoicesTab
+import cz.multio.doklady.ui.LockScreen
+import cz.multio.doklady.ui.ReceiptsScreen
+import cz.multio.doklady.ui.ReportsTab
+import cz.multio.doklady.ui.SecurityScreen
+import cz.multio.doklady.ui.SettingsScreen
+import cz.multio.doklady.ui.SimpleScreen
+import cz.multio.doklady.data.AppLock
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 
 sealed interface Screen {
     data class Login(val activationCode: String? = null) : Screen
@@ -56,6 +71,13 @@ sealed interface Screen {
     data object Trips : Screen
     data class NewTrip(val vehicleId: Int) : Screen
     data object Odometer : Screen
+    /** Režim Účtenky (1.5): každá fotka = samostatný doklad. */
+    class Receipts(val pages: List<ByteArray>) : Screen
+    data class BankItemDetail(val id: String) : Screen
+    data object Security : Screen
+    data object Settings : Screen
+    data object Invoices : Screen
+    data object Reports : Screen
     data class NewInvoice(val state: NewInvoiceState = NewInvoiceState()) : Screen
     data class CustomerEdit(val customer: Customer?, val onSaved: (Customer) -> Unit) : Screen
     /** Seznam dodavatelů za období; label = název období („Říjen 2026“). */
@@ -73,18 +95,11 @@ class Navigator(start: Screen) {
     fun reset(s: Screen) { stack.clear(); stack.add(s) }
 }
 
-private val Brand = Color(0xFF1F5FAD)
-
 @Composable
 fun App() {
-    val colors = if (isSystemInDarkTheme()) {
-        darkColorScheme(primary = Color(0xFF9DC3FF), secondary = Color(0xFF9FD3C7))
-    } else {
-        lightColorScheme(primary = Brand, secondary = Color(0xFF00796B), background = Color(0xFFF7F8FA))
-    }
-    MaterialTheme(colorScheme = colors) {
+    DokladyTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            val nav = remember { Navigator(if (Api.token.isNullOrBlank()) Screen.Login() else Screen.Main) }
+            val nav = remember { Navigator(if (Api.token.isNullOrBlank() && !AppLock.locked) Screen.Login() else Screen.Main) }
             // odkaz z pozvánky (e-mail / QR) → aktivace portálu
             val link = IncomingLink.activationCode
             LaunchedEffect(link) {
@@ -92,6 +107,12 @@ fun App() {
                     IncomingLink.activationCode = null
                     if (Api.token.isNullOrBlank()) nav.reset(Screen.Login(link))
                 }
+            }
+            if (AppLock.locked) {
+                LockScreen(onUnlocked = { AppLock.locked = false }, onUsePassword = {
+                    Api.logout(); AppLock.locked = false; nav.reset(Screen.Login())
+                })
+                return@Surface
             }
             PlatformBackHandler(enabled = nav.stack.size > 1) { nav.pop() }
             val saveable = rememberSaveableStateHolder()
@@ -116,6 +137,14 @@ fun App() {
                 Screen.Trips -> TripsScreen(nav)
                 is Screen.NewTrip -> NewTripScreen(nav, s.vehicleId)
                 Screen.Odometer -> OdometerScreen(nav)
+                is Screen.Receipts -> ReceiptsScreen(nav, s.pages)
+                is Screen.BankItemDetail -> BankItemScreen(nav, s.id)
+                Screen.Security -> SecurityScreen(nav)
+                Screen.Settings -> SettingsScreen(nav)
+                Screen.Invoices -> SimpleScreen(nav, "Faktury", fab = {
+                    ExtendedFloatingActionButton(onClick = { nav.push(Screen.NewInvoice()) }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Nová faktura") })
+                }) { InvoicesTab(nav) }
+                Screen.Reports -> SimpleScreen(nav, "Přehledy") { ReportsTab(nav) }
             }
             }
         }

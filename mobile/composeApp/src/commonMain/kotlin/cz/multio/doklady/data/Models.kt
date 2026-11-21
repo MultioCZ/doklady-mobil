@@ -486,3 +486,108 @@ data class OdometerResult(
     val state: String? = null,
     @SerialName("photo_warning") val photoWarning: String? = null,
 )
+
+
+// ---------------------------------------------------------------- přehled (portál 1.13)
+
+@Serializable
+data class HomeCounts(
+    val todo: Int = 0,
+    @SerialName("at_accountant") val atAccountant: Int = 0,
+    @SerialName("done_month") val doneMonth: Int = 0,
+)
+
+/** kind = bank | task | readability */
+@Serializable
+data class TodoItem(val kind: String, val id: String? = null, val title: String, val subtitle: String = "")
+
+@Serializable
+data class Home(val counts: HomeCounts = HomeCounts(), val todo: List<TodoItem> = emptyList(), val recent: List<Document> = emptyList())
+
+// ---------------------------------------------------------------- banka (portál 1.13)
+
+@Serializable
+data class BankAccount(
+    val account: String? = null,
+    val label: String = "",
+    /** fio = stahuje se samo, statement = nahraný výpis */
+    val source: String = "statement",
+    val active: Boolean = true,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+
+@Serializable
+data class BankAnswerOption(
+    val id: Int,
+    val label: String,
+    @SerialName("note_required") val noteRequired: Boolean = false,
+    @SerialName("no_document") val noDocument: Boolean = true,
+)
+
+@Serializable
+data class BankEventInfo(val at: String, val message: String)
+
+/** state = missing (účetní chce doklad) | open (bez dokladu, nevyžádáno) | waiting | paired | not_needed | split | other */
+@Serializable
+data class BankItem(
+    val id: String,
+    val date: String,
+    val amount: String,
+    val currency: String = "CZK",
+    val counterparty: String? = null,
+    @SerialName("counterparty_account") val counterpartyAccount: String? = null,
+    @SerialName("variable_symbol") val variableSymbol: String? = null,
+    val description: String? = null,
+    val state: String = "other",
+    @SerialName("state_label") val stateLabel: String = "",
+    val requested: Boolean = false,
+    @SerialName("document_id") val documentId: String? = null,
+    @SerialName("document_label") val documentLabel: String? = null,
+    val answer: String? = null,
+    @SerialName("answer_note") val answerNote: String? = null,
+    val reason: String? = null,
+    @SerialName("description_full") val descriptionFull: String? = null,
+    val answers: List<BankAnswerOption> = emptyList(),
+    val events: List<BankEventInfo> = emptyList(),
+) {
+    val isOutgoing get() = amount.startsWith("-")
+    val needsDocument get() = state == "missing" || state == "open"
+}
+
+@Serializable
+data class BankList(
+    val from: String = "",
+    val to: String = "",
+    val accounts: List<BankAccount> = emptyList(),
+    @SerialName("missing_total") val missingTotal: Int = 0,
+    val items: List<BankItem> = emptyList(),
+)
+
+@Serializable
+data class BankAnswerRequest(@SerialName("answer_id") val answerId: Int? = null, val note: String? = null, val clear: Boolean = false)
+
+@Serializable
+data class StatementMessage(val level: String, val text: String)
+
+@Serializable
+data class StatementResult(val ok: Boolean = false, val messages: List<StatementMessage> = emptyList())
+
+// ---------------------------------------------------------------- přístupové klíče (portál 1.13)
+
+@Serializable
+data class PasskeyChallenge(val options: JsonElement, val state: String)
+
+@Serializable
+data class PasskeyInfo(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("last_used_at") val lastUsedAt: String? = null,
+    val synced: Boolean = false,
+)
+
+@Serializable
+data class PasskeyLoginRequest(val credential: JsonElement, val state: String)
+
+@Serializable
+data class PasskeyRegisterRequest(val credential: JsonElement, val state: String, val name: String)

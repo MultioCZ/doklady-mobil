@@ -8,3 +8,6 @@
 -dontwarn org.slf4j.**
 -dontwarn io.ktor.**
 -dontwarn okhttp3.internal.platform.**
+# Credential Manager (přístupové klíče přes Google Play služby)
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** { *; }

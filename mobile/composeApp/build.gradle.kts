@@ -9,7 +9,11 @@ plugins {
 }
 
 kotlin {
-    sourceSets.all { languageSettings.optIn("androidx.compose.material3.ExperimentalMaterial3Api") }
+    sourceSets.all {
+        languageSettings.optIn("androidx.compose.material3.ExperimentalMaterial3Api")
+        languageSettings.optIn("kotlin.io.encoding.ExperimentalEncodingApi")
+    }
+
     androidTarget {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
@@ -41,6 +45,10 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.mlkit.document.scanner)
             implementation(libs.mlkit.barcode.scanning)
+            implementation(libs.androidx.biometric)
+            implementation(libs.androidx.fragment)
+            implementation(libs.androidx.credentials)
+            implementation(libs.androidx.credentials.play)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
@@ -56,8 +64,8 @@ android {
         applicationId = "cz.multio.doklady"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 4
-        versionName = "1.4.0"
+        versionCode = 5
+        versionName = "1.5.0"
     }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }

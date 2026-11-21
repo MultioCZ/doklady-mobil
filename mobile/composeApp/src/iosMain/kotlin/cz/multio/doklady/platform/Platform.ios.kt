@@ -53,6 +53,12 @@ import platform.VisionKit.VNDocumentCameraScan
 import platform.VisionKit.VNDocumentCameraViewController
 import platform.VisionKit.VNDocumentCameraViewControllerDelegateProtocol
 import platform.darwin.NSObject
+import platform.LocalAuthentication.LAContext
+import platform.LocalAuthentication.LAPolicyDeviceOwnerAuthenticationWithBiometrics
+import platform.UniformTypeIdentifiers.UTTypeItem
+import platform.UIKit.UIDevice
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import platform.Vision.VNBarcodeObservation
 import platform.Vision.VNBarcodeSymbologyQR
 import platform.Vision.VNDetectBarcodesRequest
@@ -127,7 +133,7 @@ private class ScanDelegate(private val onResult: (PickedDocument?) -> Unit) :
 }
 
 @Composable
-actual fun rememberDocumentScanner(onResult: (PickedDocument?) -> Unit): () -> Unit {
+actual fun rememberDocumentScanner(pageLimit: Int, onResult: (PickedDocument?) -> Unit): () -> Unit {
     // delegát musí žít, dokud je skener otevřený (UIKit drží jen slabý odkaz)
     val delegate = remember { ScanDelegate { onResult(it) } }
     return {
@@ -221,7 +227,7 @@ actual fun rememberFilePicker(onResult: (PickedDocument?) -> Unit): () -> Unit {
 
 // ---------------------------------------------------------------- ostatní
 
-actual fun decodeImage(bytes: ByteArray): ImageBitmap? =
+actual fun decodeImage(bytes: ByteArray, maxSize: Int): ImageBitmap? =
     runCatching { Image.makeFromEncoded(bytes).toComposeImageBitmap() }.getOrNull()
 
 actual fun openPdf(bytes: ByteArray, fileName: String) {
@@ -264,6 +270,63 @@ actual object LocalFiles {
     actual fun delete(name: String) {
         NSFileManager.defaultManager.removeItemAtPath("$dir/$name", error = null)
     }
+}
+
+// ---------------------------------------------------------------- výpisy z banky (libovolné soubory)
+
+private class StatementDelegate(private val onResult: (List<PickedFile>) -> Unit) : NSObject(), UIDocumentPickerDelegateProtocol {
+    override fun documentPicker(controller: UIDocumentPickerViewController, didPickDocumentsAtURLs: List<*>) {
+        val files = didPickDocumentsAtURLs.take(6).mapNotNull { it as? NSURL }.mapNotNull { url ->
+            val access = url.startAccessingSecurityScopedResource()
+            val data = NSData.dataWithContentsOfURL(url)?.toByteArray()
+            if (access) url.stopAccessingSecurityScopedResource()
+            data?.let { PickedFile(it, if (url.pathExtension?.lowercase() == "pdf") "application/pdf" else "application/octet-stream", url.lastPathComponent ?: "vypis") }
+        }
+        onResult(files)
+    }
+
+    override fun documentPickerWasCancelled(controller: UIDocumentPickerViewController) = onResult(emptyList())
+}
+
+@Composable
+actual fun rememberStatementPicker(onResult: (List<PickedFile>) -> Unit): () -> Unit {
+    val delegate = remember { StatementDelegate { onResult(it) } }
+    return {
+        val picker = UIDocumentPickerViewController(forOpeningContentTypes = listOf(UTTypeItem), asCopy = true)
+        picker.allowsMultipleSelection = true
+        picker.delegate = delegate
+        topViewController()?.presentViewController(picker, animated = true, completion = null)
+    }
+}
+
+// ---------------------------------------------------------------- Face ID / Touch ID
+
+/**
+ * iPhone: ověření Face ID / Touch ID (LocalAuthentication). Token se zatím ukládá v datech aplikace bez vazby na
+ * Keychain – zámek chrání aplikaci před otevřením cizí osobou, ne před vytažením dat z telefonu (doplní se s Keychainem).
+ */
+actual object Biometrics {
+    actual fun available(): Boolean = LAContext().canEvaluatePolicy(LAPolicyDeviceOwnerAuthenticationWithBiometrics, error = null)
+
+    private suspend fun verify(reason: String): Boolean = suspendCancellableCoroutine { cont ->
+        LAContext().evaluatePolicy(LAPolicyDeviceOwnerAuthenticationWithBiometrics, localizedReason = reason) { ok, _ ->
+            if (cont.isActive) cont.resume(ok)
+        }
+    }
+
+    actual suspend fun encrypt(plain: String): String? = if (verify("Zapnout odemykání aplikace Doklady")) plain else null
+
+    actual suspend fun decrypt(blob: String): String? = if (verify("Odemknout aplikaci Doklady")) blob else null
+
+    actual fun reset() {}
+}
+
+/** Přístupové klíče na iPhonu vyžadují účet Apple Developer a soubor apple-app-site-association – zatím nejsou. */
+actual object Passkeys {
+    actual fun supported(): Boolean = false
+    actual suspend fun get(optionsJson: String): String = throw PasskeyException("Na iPhonu přihlášení klíčem zatím není – použijte heslo.")
+    actual suspend fun create(optionsJson: String): String = throw PasskeyException("Na iPhonu přidání klíče zatím není.")
+    actual fun deviceName(): String = UIDevice.currentDevice.name
 }
 
 // ---------------------------------------------------------------- QR platba (Apple Vision, v telefonu)

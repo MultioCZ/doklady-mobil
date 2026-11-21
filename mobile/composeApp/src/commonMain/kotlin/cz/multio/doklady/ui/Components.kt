@@ -51,6 +51,7 @@ fun Field(
         singleLine = singleLine,
         enabled = enabled,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard),
+        shape = MaterialTheme.shapes.medium,
         modifier = modifier.fillMaxWidth(),
     )
 }

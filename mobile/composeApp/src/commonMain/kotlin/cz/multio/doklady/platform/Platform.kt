@@ -28,13 +28,14 @@ class PickedDocument(
  * Vrací funkci, která skener spustí.
  */
 @Composable
-expect fun rememberDocumentScanner(onResult: (PickedDocument?) -> Unit): () -> Unit
+expect fun rememberDocumentScanner(pageLimit: Int = 10, onResult: (PickedDocument?) -> Unit): () -> Unit
 
 /** Výběr existující fotky nebo PDF (např. faktura z e-mailu). */
 @Composable
 expect fun rememberFilePicker(onResult: (PickedDocument?) -> Unit): () -> Unit
 
-expect fun decodeImage(bytes: ByteArray): ImageBitmap?
+/** maxSize = nejdelší strana (Android zmenšuje při dekódování, šetří paměť). */
+expect fun decodeImage(bytes: ByteArray, maxSize: Int = 2400): ImageBitmap?
 
 /** Otevře / nasdílí PDF (náhled, uložení, odeslání jinou aplikací). */
 expect fun openPdf(bytes: ByteArray, fileName: String)
@@ -66,6 +67,45 @@ expect suspend fun readQrCodes(image: ByteArray): List<String>
 /** Obyčejná fotka fotoaparátem (bez ořezu skeneru) – tachometr. Vrací JPEG, nebo null při zrušení. */
 @Composable
 expect fun rememberCamera(onResult: (ByteArray?) -> Unit): () -> Unit
+
+/** Soubor vybraný v telefonu (výpis z banky: GPC, XML, CSV, PDF). */
+class PickedFile(val data: ByteArray, val mime: String, val name: String)
+
+/** Výběr jednoho nebo více libovolných souborů (výpisy z banky). */
+@Composable
+expect fun rememberStatementPicker(onResult: (List<PickedFile>) -> Unit): () -> Unit
+
+/** V telefonu se změnily otisky prstů – uložené přihlášení už nejde odemknout, je nutné heslo. */
+class BiometricKeyInvalidated : Exception("Otisky v telefonu se změnily. Přihlaste se znovu heslem.")
+
+/**
+ * Odemykání otiskem prstu / obličejem. Android: BiometricPrompt + klíč v Android Keystore, který jde použít jen
+ * po ověření (token se jím šifruje). iPhone: Face ID / Touch ID (LocalAuthentication).
+ */
+expect object Biometrics {
+    /** Telefon má nastavený otisk / obličej, který lze použít. */
+    fun available(): Boolean
+    /** Zašifruje text po ověření; null = uživatel zrušil. */
+    suspend fun encrypt(plain: String): String?
+    /** Rozšifruje po ověření; null = zrušeno. Vyhodí BiometricKeyInvalidated. */
+    suspend fun decrypt(blob: String): String?
+    /** Smaže klíč. */
+    fun reset()
+}
+
+/** Chyba přístupového klíče s textem pro uživatele; cancelled = uživatel okno zavřel. */
+class PasskeyException(message: String, val cancelled: Boolean = false) : Exception(message)
+
+/** Přístupové klíče (passkeys / WebAuthn) – Android Credential Manager. JSON podle WebAuthn (stejné klíče jako na webu). */
+expect object Passkeys {
+    fun supported(): Boolean
+    /** options = PublicKeyCredentialRequestOptions (JSON) → odpověď (JSON) pro server. */
+    suspend fun get(optionsJson: String): String
+    /** options = PublicKeyCredentialCreationOptions (JSON) → odpověď (JSON) pro server. */
+    suspend fun create(optionsJson: String): String
+    /** Název zařízení pro seznam klíčů. */
+    fun deviceName(): String
+}
 
 /** Otevře odkaz v prohlížeči / mapách. */
 expect fun openUrl(url: String)

@@ -56,8 +56,8 @@ object Api {
         set(v) = KeyValueStore.put("server_override", normalizeUrl(v).takeIf { it.isNotBlank() && it != cz.multio.doklady.AppConfig.SERVER_URL })
 
     var token: String?
-        get() = KeyValueStore.get("token")
-        set(v) = KeyValueStore.put("token", v)
+        get() = Session.token()
+        set(v) = Session.setToken(v)
 
     var companyId: Int?
         get() = KeyValueStore.get("company")?.toIntOrNull()
@@ -166,6 +166,7 @@ object Api {
         job: String? = null,
         direction: String? = null,
         qr: String? = null,
+        docType: String? = null,
     ): Document = call {
         client.submitFormWithBinaryData(
             url = url("/documents"),
@@ -190,6 +191,8 @@ object Api {
                 if (!direction.isNullOrBlank()) append("direction", direction)
                 // QR platba přečtená v telefonu (portál 1.12) – po vytěžení doplní účet, VS, splatnost a částku
                 if (!qr.isNullOrBlank()) append("qr", qr)
+                // faktura | uctenka – u účtenek z režimu „Účtenky“ (1.5)
+                if (!docType.isNullOrBlank()) append("doc_type", docType)
             },
         ) { auth(company) }
     }
@@ -358,6 +361,94 @@ object Api {
     suspend fun missing(): List<MissingItem> = call { client.get(url("/missing")) { auth() } }
 
     suspend fun documentChain(id: String): ChainInfo = call { client.get(url("/documents/$id/chain")) { auth() } }
+
+    // ---------------------------------------------------------------- přehled a banka (portál 1.13)
+
+    suspend fun home(): Home = call { client.get(url("/home")) { auth() } }
+
+    /** month = RRRR-MM, filter = all | missing | paired */
+    suspend fun bank(month: String, filter: String = "all"): BankList = call {
+        client.get(url("/bank")) { auth(); parameter("month", month); parameter("filter", filter) }
+    }
+
+    suspend fun bankItem(id: String): BankItem = call { client.get(url("/bank/$id")) { auth() } }
+
+    suspend fun bankAnswer(id: String, answerId: Int, note: String?): BankItem = call {
+        client.post(url("/bank/$id/answer")) { auth(); contentType(ContentType.Application.Json); setBody(BankAnswerRequest(answerId, note)) }
+    }
+
+    suspend fun bankClearAnswer(id: String): BankItem = call {
+        client.post(url("/bank/$id/answer")) { auth(); contentType(ContentType.Application.Json); setBody(BankAnswerRequest(clear = true)) }
+    }
+
+    /** Doklad k platbě – nahraje se a rovnou připojí k pohybu. */
+    suspend fun bankDocument(id: String, original: ByteArray, mime: String, name: String, processed: ByteArray?, qr: String?): BankItem = call {
+        client.submitFormWithBinaryData(
+            url = url("/bank/$id/document"),
+            formData = formData {
+                append("original", original, Headers.build {
+                    append(HttpHeaders.ContentType, mime)
+                    append(HttpHeaders.ContentDisposition, "filename=\"${name.replace("\"", "")}\"")
+                })
+                if (processed != null) append("processed", processed, Headers.build {
+                    append(HttpHeaders.ContentType, "image/jpeg")
+                    append(HttpHeaders.ContentDisposition, "filename=\"processed.jpg\"")
+                })
+                if (!qr.isNullOrBlank()) append("qr", qr)
+            },
+        ) { auth() }
+    }
+
+    /** Výpis z banky (GPC/ABO, XML, CSV, PDF; víc souborů najednou). files = (data, mime, název). */
+    suspend fun uploadStatement(files: List<Triple<ByteArray, String, String>>): StatementResult {
+        val r = try {
+            client.submitFormWithBinaryData(
+                url = url("/bank/statements"),
+                formData = formData {
+                    files.forEach { (data, mime, name) ->
+                        append("file", data, Headers.build {
+                            append(HttpHeaders.ContentType, mime)
+                            append(HttpHeaders.ContentDisposition, "filename=\"${name.replace("\"", "")}\"")
+                        })
+                    }
+                },
+            ) { auth() }
+        } catch (e: Exception) {
+            throw ApiException("Server není dostupný. Zkontrolujte připojení k internetu.")
+        }
+        // 400 = výpis se nenačetl, ale odpověď obsahuje vysvětlení
+        if (r.status.value == 400) runCatching { return json.decodeFromString(StatementResult.serializer(), r.bodyAsText()) }
+        return check(r).body()
+    }
+
+    // ---------------------------------------------------------------- přístupové klíče (portál 1.13)
+
+    suspend fun passkeyLoginOptions(): PasskeyChallenge = call { client.post(url("/auth/passkey/options")) }
+
+    suspend fun passkeyLogin(credentialJson: String, state: String): LoginResponse = signedIn(call {
+        client.post(url("/auth/passkey/login")) {
+            contentType(ContentType.Application.Json)
+            setBody(PasskeyLoginRequest(json.parseToJsonElement(credentialJson), state))
+        }
+    })
+
+    suspend fun passkeys(): List<PasskeyInfo> = call { client.get(url("/passkeys")) { auth(null) } }
+
+    suspend fun passkeyRegisterOptions(): PasskeyChallenge = call { client.post(url("/passkeys/options")) { auth(null) } }
+
+    suspend fun passkeyRegister(credentialJson: String, state: String, name: String): PasskeyInfo = call {
+        client.post(url("/passkeys")) {
+            auth(null); contentType(ContentType.Application.Json)
+            setBody(PasskeyRegisterRequest(json.parseToJsonElement(credentialJson), state, name))
+        }
+    }
+
+    suspend fun deletePasskey(id: Int) {
+        val r = try { client.delete(url("/passkeys/$id")) { auth(null) } } catch (e: Exception) {
+            throw ApiException("Server není dostupný.")
+        }
+        check(r)
+    }
 
     // ---------------------------------------------------------------- kniha jízd (portál 0.44)
 
