@@ -9,6 +9,7 @@ plugins {
 }
 
 kotlin {
+    sourceSets.all { languageSettings.optIn("androidx.compose.material3.ExperimentalMaterial3Api") }
     androidTarget {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
