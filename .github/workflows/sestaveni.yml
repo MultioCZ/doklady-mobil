@@ -1,0 +1,56 @@
+name: Sestavení aplikace
+on:
+  workflow_dispatch:
+    inputs:
+      ios:
+        description: 'Zkontrolovat i překlad pro iPhone'
+        type: boolean
+        default: false
+  push:
+    paths: ['mobile/**', '.github/workflows/**']
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: mobile}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: doklady-debug-keystore-v1
+      - run: chmod +x gradlew
+      - name: Sestavení (debug APK)
+        run: |
+          set -o pipefail
+          ./gradlew :composeApp:assembleDebug --stacktrace 2>&1 | tee build.log
+      - name: Chyby překladu do souhrnu
+        if: failure()
+        run: |
+          {
+            echo '## Chyby sestavení'
+            echo '```'
+            grep -E '^e: |error:|What went wrong|Could not resolve' -A2 build.log | head -150
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: doklady-android
+          path: mobile/composeApp/build/outputs/apk/debug/*.apk
+  ios-compile:
+    if: github.event_name == 'workflow_dispatch' && inputs.ios
+    runs-on: macos-latest
+    defaults: {run: {working-directory: mobile}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - name: Překlad sdíleného kódu pro iOS
+        run: |
+          set -o pipefail
+          ./gradlew :composeApp:compileKotlinIosSimulatorArm64 --stacktrace 2>&1 | tee build.log
