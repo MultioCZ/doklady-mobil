@@ -1,3 +1,8 @@
+# Sestavení mobilní aplikace na GitHubu (soukromý repozitář: 2000 minut měsíčně zdarma).
+# Spouští se samo po každém nahrání změn do složky mobile/, nebo ručně: Actions → „Sestavení aplikace“ → Run workflow.
+# Výsledek: APK pro Android ke stažení dole na stránce běhu (Artifacts → doklady-android).
+# Když sestavení selže, chyby překladu jsou vypsané v souhrnu běhu (Summary) – stačí je zkopírovat.
+# iOS se jen kontroluje a jen při ručním spuštění se zaškrtnutým „ios“ (Mac na GitHubu spotřebuje 10× víc minut).
 name: Sestavení aplikace
 on:
   workflow_dispatch:
@@ -17,6 +22,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '17'}
       - uses: gradle/actions/setup-gradle@v4
+      # stejný ladicí podpis pro všechna sestavení → nová verze se nainstaluje přes starou (bez odinstalace)
       - uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
@@ -35,6 +41,11 @@ jobs:
             grep -E '^e: |error:|What went wrong|Could not resolve' -A2 build.log | head -150
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Otisk podpisu (pro přihlášení klíčem – ANDROID_APP_SHA256 v .env serveru)
+        if: success()
+        run: |
+          FP=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | grep -m1 'SHA256:' | sed 's/.*SHA256: //')
+          { echo '## Otisk podpisu aplikace'; echo 'Do `.env` na serveru: `ANDROID_APP_SHA256='"$FP"'`'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: success()
         with:
@@ -54,3 +65,7 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew :composeApp:compileKotlinIosSimulatorArm64 --stacktrace 2>&1 | tee build.log
+      - name: Chyby překladu do souhrnu
+        if: failure()
+        run: |
+          { echo '## Chyby překladu iOS'; echo '```'; grep -E '^e: |error:|What went wrong' -A2 build.log | head -150; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
