@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>cs</string>
+	<key>CFBundleDisplayName</key>
+	<string>Doklady</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Fotoaparát slouží ke skenování účtenek a faktur.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Z galerie můžete vybrat fotku dokladu k odeslání účetní.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>cz.multio.doklady.activate</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>multiodoklady</string>
+			</array>
+		</dict>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict/>
+</dict>
+</plist>
