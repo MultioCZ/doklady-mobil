@@ -75,6 +75,9 @@ fun UploadScreen(nav: Navigator, picked: PickedDocument, preset: UploadPreset = 
     LaunchedEffect(Unit) { runCatching { Api.dimensions() }.onSuccess { dims = it } }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    // „Za co to je?“ (portál 1.15) – jen u nákupu a když to balíček obsahuje
+    val categories = rememberCategories()
+    var categoryId by remember { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
     val previews = remember(picked) {
         val images = picked.pages.ifEmpty {
@@ -163,6 +166,9 @@ fun UploadScreen(nav: Navigator, picked: PickedDocument, preset: UploadPreset = 
                         }
                     }
                 }
+                if (categories?.enabled == true && direction == "purchase" && categories.options.isNotEmpty()) {
+                    CategoryChips(categories, categoryId) { categoryId = it }
+                }
                 Field("Poznámka pro účetní (nepovinné)", note, { note = it }, singleLine = false)
                 message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Row {
@@ -176,7 +182,8 @@ fun UploadScreen(nav: Navigator, picked: PickedDocument, preset: UploadPreset = 
                                 // nejdřív uložit do telefonu, pak odeslat – bez signálu se nic neztratí
                                 val item = Outbox.enqueue(original, mime, name, processed, note.ifBlank { null },
                                     stage = stage.ifBlank { null }, costCenter = centre.ifBlank { null },
-                                    job = job.ifBlank { null }, direction = direction, qr = qr?.raw)
+                                    job = job.ifBlank { null }, direction = direction, qr = qr?.raw,
+                                    categoryId = categoryId.takeIf { direction == "purchase" })
                                 val doc = Outbox.send(item)
                                 busy = false
                                 if (doc != null) {

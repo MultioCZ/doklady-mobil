@@ -83,6 +83,8 @@ fun DocumentDetailScreen(nav: Navigator, id: String) {
     var confirmDelete by remember { mutableStateOf(false) }
     val images = remember { mutableStateMapOf<String, ImageBitmap?>() }
     val scope = rememberCoroutineScope()
+    val categories = rememberCategories()
+    var categoryBusy by remember { mutableStateOf(false) }
 
     LaunchedEffect(id) {
         try {
@@ -171,6 +173,23 @@ fun DocumentDetailScreen(nav: Navigator, id: String) {
                         Text("Náležitosti dokladu", style = MaterialTheme.typography.titleSmall)
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         LabelValue("Typ", d.docType?.let { docTypeNames[it] ?: it })
+                        // druh podle klienta (portál 1.15): změnit jde jen do kontroly účetní
+                        if (d.direction == "purchase" && categories != null) {
+                            if (categories.enabled) {
+                                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                                CategoryRow(categories, d.clientCategory, d.categorySuggestion, d.categoryEditable, categoryBusy) { picked ->
+                                    categoryBusy = true
+                                    scope.launch {
+                                        runCatching { Api.setDocumentCategory(d.id, picked) }.onSuccess { doc = it }.onFailure { error = nav.errorText(it) }
+                                        categoryBusy = false
+                                    }
+                                }
+                                d.clientCategory?.explanation?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp)) }
+                                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                            } else if (categories.lockedIn != null) {
+                                LabelValue("Druh", "zařadí účetní · výběr v balíčku ${categories.lockedIn}")
+                            }
+                        }
                         if (d.stage != "final") LabelValue("Druh v cestě", d.stageLabel ?: stageNames[d.stage])
                         if (!d.costCenter.isNullOrBlank()) LabelValue("Středisko", d.costCenter)
                         if (!d.job.isNullOrBlank()) LabelValue("Zakázka", d.job)

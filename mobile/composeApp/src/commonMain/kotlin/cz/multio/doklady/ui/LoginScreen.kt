@@ -60,7 +60,7 @@ import kotlinx.coroutines.launch
  * Když měl uživatel zapnuté odemykání otiskem, po přihlášení se nové přihlášení rovnou zašifruje (systémové okno).
  */
 @Composable
-fun LoginScreen(onLoggedIn: () -> Unit, activationCode: String? = null) {
+fun LoginScreen(onLoggedIn: () -> Unit, activationCode: String? = null, onApply: (() -> Unit)? = null) {
     var activation by remember { mutableStateOf(activationCode != null) }
     var code by remember { mutableStateOf(activationCode ?: "") }
     var ident by remember { mutableStateOf(KeyValueStore.get("last_login") ?: "") }
@@ -191,6 +191,9 @@ fun LoginScreen(onLoggedIn: () -> Unit, activationCode: String? = null) {
                     forgot -> TextButton(onClick = { forgot = false; error = null; info = null }, modifier = Modifier.fillMaxWidth()) { Text("Zpět na přihlášení") }
                     activation -> TextButton(onClick = { activation = false; error = null }, modifier = Modifier.fillMaxWidth()) { Text("Už mám heslo – přihlásit se") }
                     else -> TextButton(onClick = { forgot = true; error = null; info = null }, modifier = Modifier.fillMaxWidth()) { Text("Zapomněli jste heslo?") }
+                }
+                if (onApply != null && !forgot && !activation) {
+                    TextButton(onClick = onApply, modifier = Modifier.fillMaxWidth()) { Text("Ještě nejste klient? Chci se stát klientem") }
                 }
             }
             Spacer(Modifier.height(24.dp))

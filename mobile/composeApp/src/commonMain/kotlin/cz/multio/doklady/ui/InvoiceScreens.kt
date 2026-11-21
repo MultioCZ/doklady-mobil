@@ -111,6 +111,9 @@ fun InvoiceDetailScreen(nav: Navigator, id: String) {
                     LabelValue("Vystaveno", czDate(i.issueDate))
                     LabelValue("Splatnost", czDate(i.dueDate))
                     LabelValue("Var. symbol", i.variableSymbol)
+                    i.paymentMethod?.let { LabelValue("Úhrada", mapOf("prevod" to "Převodem" + if (i.showQr) " · s QR kódem" else "", "hotove" to "Hotově", "karta" to "Kartou", "dobirka" to "Dobírkou")[it] ?: it) }
+                    i.orderNumber?.let { LabelValue("Objednávka č.", it) }
+                    if (i.costCenter != null || i.job != null) LabelValue("Středisko / zakázka", listOfNotNull(i.costCenter, i.job).joinToString(" / "))
                     if (i.reverseCharge) LabelValue("Režim", "Přenesená daňová povinnost")
                     i.sentTo?.let { LabelValue("Odesláno", "$it (${czDate(i.sentAt)})") }
                 }
@@ -208,6 +211,15 @@ class NewInvoiceState {
     var sendTo by mutableStateOf("")
     var recurring by mutableStateOf(false)
     var interval by mutableStateOf("1")
+    // portál 1.14
+    var paymentMethod by mutableStateOf("prevod")
+    var showQr by mutableStateOf(true)
+    var orderNumber by mutableStateOf("")
+    var centre by mutableStateOf("")
+    var job by mutableStateOf("")
+    var taxableDate by mutableStateOf("")
+    var dims by mutableStateOf(cz.multio.doklady.data.Dimensions())
+    var profile by mutableStateOf<cz.multio.doklady.data.CompanyProfileData?>(null)
 
     fun pick(c: Customer) {
         customer = c
@@ -237,8 +249,11 @@ fun NewInvoiceScreen(nav: Navigator, st: NewInvoiceState) {
     fun pick(c: Customer) = st.pick(c)
 
     LaunchedEffect(Unit) {
+        // údaje firmy načíst pokaždé (účet mohl přibýt v Údajích firmy)
+        runCatching { Api.companyProfile() }.onSuccess { p -> st.profile = p; if (st.dueDays == "14") p.defaultDueDays?.let { st.dueDays = it.toString() } }
         if (customers.isNotEmpty()) return@LaunchedEffect
         try { customers = Api.customers() } catch (e: Exception) { error = nav.errorText(e) }
+        runCatching { Api.dimensions() }.onSuccess { st.dims = it }
     }
 
     Scaffold(topBar = {
@@ -307,6 +322,39 @@ fun NewInvoiceScreen(nav: Navigator, st: NewInvoiceState) {
                 Field("Datum vystavení", issueDate, { issueDate = it }, Modifier.weight(1f))
                 Field("Splatnost (dní)", dueDays, { dueDays = it }, Modifier.weight(1f), KeyboardType.Number)
             }
+            if (vatPayer) Field("DUZP (prázdné = datum vystavení)", st.taxableDate, { st.taxableDate = it }, placeholder = "17. 10. 2026")
+
+            // --- platba (portál 1.14)
+            Text("Platba", style = MaterialTheme.typography.titleSmall)
+            Dropdown("Způsob úhrady", linkedMapOf("prevod" to "Bankovním převodem", "hotove" to "Hotově", "karta" to "Kartou", "dobirka" to "Dobírkou"),
+                st.paymentMethod, { st.paymentMethod = it })
+            if (st.paymentMethod == "prevod") {
+                SwitchRow("QR kód pro platbu na faktuře", st.showQr) { st.showQr = it }
+                val p = st.profile
+                if (p != null && !p.qrReady) {
+                    Text("Ve vašich údajích firmy chybí číslo účtu nebo IBAN – bez něj faktura převodem nejde vystavit a QR kód se nevytvoří.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { nav.push(Screen.CompanyProfile) }) { Text("Doplnit účet v Údajích firmy") }
+                } else if (p != null) {
+                    Text(listOfNotNull(p.bankAccount?.takeIf { it.isNotBlank() }?.let { "Účet $it" }, p.iban?.takeIf { it.isNotBlank() }?.let { "IBAN $it" }).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Field("Číslo objednávky odběratele (nepovinné)", st.orderNumber, { st.orderNumber = it }, placeholder = "Vytiskne se na fakturu")
+            if (st.dims.centres.isNotEmpty() || st.dims.jobs.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (st.dims.centres.isNotEmpty()) {
+                        Dropdown("Středisko", linkedMapOf("" to "—") + st.dims.centres.associate { it.code to listOf(it.code, it.name).filter { x -> x.isNotBlank() }.joinToString(" · ") },
+                            st.centre, { st.centre = it }, modifier = Modifier.weight(1f))
+                    }
+                    if (st.dims.jobs.isNotEmpty()) {
+                        Dropdown("Zakázka", linkedMapOf("" to "—") + st.dims.jobs.associate { it.code to listOf(it.code, it.name).filter { x -> x.isNotBlank() }.joinToString(" · ") },
+                            st.job, { st.job = it }, modifier = Modifier.weight(1f))
+                    }
+                }
+                Text("Středisko a zakázka jsou jen pro účetnictví – na faktuře nejsou.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (vatPayer) {
                 SwitchRow("Přenesená daňová povinnost (§ 92a)", reverseCharge) { reverseCharge = it }
             }
@@ -320,8 +368,11 @@ fun NewInvoiceScreen(nav: Navigator, st: NewInvoiceState) {
             }
             if (send) Field("E-mail odběratele", sendTo, { sendTo = it }, keyboard = KeyboardType.Email)
 
-            SwitchRow("Opakovat fakturu (uložit jako šablonu)", recurring) { recurring = it }
-            if (recurring) {
+            val plusLocked = st.company?.lockedIn("invoicing_plus")
+            if (plusLocked == null) SwitchRow("Opakovat fakturu (uložit jako šablonu)", recurring) { recurring = it }
+            else Text("Opakované faktury jsou součástí balíčku $plusLocked – zeptejte se účetní.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (recurring && plusLocked == null) {
                 Dropdown("Opakovat", linkedMapOf("1" to "každý měsíc", "3" to "každé čtvrtletí", "12" to "každý rok"),
                     interval, { interval = it })
                 Text("Další faktury portál vystaví automaticky a pošle vám upozornění. Odběrateli je zatím odešlete sami tlačítkem Odeslat e-mailem.",
@@ -330,7 +381,8 @@ fun NewInvoiceScreen(nav: Navigator, st: NewInvoiceState) {
 
             val canSubmit = customer != null && items.all { it.valid() } && !busy &&
                 (!send || sendTo.contains("@")) && parseCzDate(issueDate) != null &&
-                (!reverseCharge || !customer?.dic.isNullOrBlank())
+                (!reverseCharge || !customer?.dic.isNullOrBlank()) &&
+                (st.taxableDate.isBlank() || parseCzDate(st.taxableDate) != null)
             if (reverseCharge && customer != null && customer?.dic.isNullOrBlank()) {
                 Text("Pro přenesenou daňovou povinnost musí mít odběratel DIČ.", color = MaterialTheme.colorScheme.error)
             }
@@ -348,8 +400,11 @@ fun NewInvoiceScreen(nav: Navigator, st: NewInvoiceState) {
                                 customerId = c.id, items = list, issueDate = iso, dueDays = dueDays.toIntOrNull(),
                                 reverseCharge = reverseCharge, note = note.ifBlank { null },
                                 sendTo = if (send) sendTo.trim() else null,
+                                paymentMethod = st.paymentMethod, showQr = st.paymentMethod == "prevod" && st.showQr,
+                                orderNumber = st.orderNumber.trim().ifBlank { null }, costCenter = st.centre.ifBlank { null }, job = st.job.ifBlank { null },
+                                taxableDate = st.taxableDate.takeIf { it.isNotBlank() }?.let { parseCzDate(it) },
                             ))
-                            if (recurring) {
+                            if (recurring && plusLocked == null) {
                                 val months = interval.toInt()
                                 Api.createRecurring(RecurringCreate(
                                     customerId = c.id,

@@ -1,4 +1,4 @@
-# Doklady – mobilní aplikace (Android + iPhone), verze 1.4
+# Doklady – mobilní aplikace (Android + iPhone), verze 1.8
 
 Mobilní aplikace je **portál** k vaší webové aplikaci. Vyfotí doklad, upraví ho (ořez, srovnání perspektivy,
 vyrovnání osvětlení) a uloží ho do webové aplikace. Zobrazí vytěžené náležitosti a přehledy a umí
@@ -10,6 +10,36 @@ mobile/    Kotlin Multiplatform + Compose Multiplatform – JEDEN kód pro Andro
 backend/   referenční API server (Python, FastAPI, PostgreSQL) – vzor pro vaši webovou aplikaci
 docs/      API.md = smlouva mezi aplikacemi, postgres_schema.sql = tabulky
 ```
+
+## Verze 1.8 – noví klienti a podklady k přiznání (portál 1.16)
+
+- Úvodní obrazovka bez přihlášení: **Jsem klient** (přihlášení) / **Chci se stát klientem** (žádost). Na přihlášení odkaz na žádost.
+- Žádost: zájem (celý rok / jen přiznání) → kontakt a IČO s načtením z ARES → u celého roku obor, popis, provozovna, web, zaměstnanci, vedení, doklady, DPH → u přiznání krátký dotazník (situace, zaměstnání, dohody DPP/DPČ každá zvlášť, podnikání, slevy; všude „Nevím“) → shrnutí se seznamem podkladů → ověření e-mailu 6místným kódem → odesláno. Doklady se v žádosti neposílají.
+- Limity a texty upozornění bere aplikace z portálu (Správa → Pravidla přiznání), nejsou v aplikaci natvrdo.
+- **Podklady k přiznání:** karta na Přehledu (rok, kolik hotovo, termín). Položky podle příjmů; u každé **Vyfotit** (systémový skener, víc stran → jedno PDF) nebo **Nahrát soubor** (PDF od brokera, faktury). Po vyfocení **Kontrola fotek**: náhled stran, upozornění na rozmazanou stranu, vyfotit znovu / smazat / přidat stranu. U pronájmu a ostatních příjmů celková částka, u dětí text. Odeslat účetní (i neúplné).
+
+## Verze 1.7 – „Za co to je?“: druh dokladu podle klienta (portál 1.15)
+
+- Při nahrání nákupu jeden řádek štítků s nejčastějšími druhy (PHM, materiál, služby…) a „Jiné…“ (spodní panel s dlaždicemi a hledáním, „Nevím – nechat na účetní“). Nepovinné.
+- Daňová evidence / paušál: navíc „Soukromé (nedaňové)“; účetnictví: „Pohledávky a závazky vůči společníkům“. Seznam řídí kancelář v portálu.
+- V detailu dokladu řádek „Druh“: návrh portálu (podle dodavatele / vytěžení) přerušovaně, klepnutím potvrdit nebo změnit; po kontrole účetní zamčeno. V balíčku Mini „zařadí účetní · výběr v balíčku Basic“.
+
+## Verze 1.6 – fakturace: účet, QR, úhrada, objednávka, středisko a zakázka; balíčky; AI asistent (portál 1.14)
+
+- **Údaje firmy** (menu): číslo účtu, IBAN, splatnost, e-mail, adresa, plátce DPH – stejné jako na webu; kontrola tvaru účtu, aby šel vytvořit QR.
+- **Nová faktura:** způsob úhrady (převod / hotově / kartou / dobírka), přepínač **QR kód pro platbu**, upozornění na chybějící účet s odkazem do Údajů firmy, **číslo objednávky** (tiskne se), **středisko a zakázka** z číselníku firmy (jen pro účetnictví), DUZP u plátce DPH. Detail faktury je ukazuje.
+- **Balíčky:** aplikace je ve všech balíčcích; v menu jsou funkce podle balíčku, chybějící se štítkem „Expert“ apod. a vysvětlením. Balíček se načítá při každém spuštění (změna na webu se projeví bez odhlášení). Opakované faktury jen s rozšířenou fakturací.
+- **Asistent** (balíček Expert): otázky na vlastní čísla, návrhy dalších otázek, právní otázky jedním klepnutím účetní; konverzace je společná s webem.
+
+## Verze 1.5 – nový vzhled, banka, účtenky, otisk prstu a přístupové klíče (portál 1.13)
+
+- **Vzhled podle portálu:** logo Multio CZ, ikona na ploše stejná jako u portálu („D_“ na zelené), jedna hlavní barva, karty, štítky stavu. Dole Přehled · Doklady · **Vyfotit** · Banka · Úkoly; Faktury, Kniha jízd, Přehledy, Daň z příjmů, Zabezpečení a Nastavení v menu vpravo nahoře.
+- **Přehled:** K doplnění / U účetní / Hotovo, „Co od vás potřebujeme“ (platby bez dokladu, úkoly, čitelnější kopie), poslední doklady.
+- **Vyfotit:** volba Účtenky (každá fotka = samostatný doklad, jednostránkové PDF), Vícestránkový doklad (jedno PDF), Soubor. U účtenek kontrola před odesláním: náhledy, upozornění na možná rozmazanou fotku (orientační), vyfotit znovu, smazat, spojit s předchozí, nákup/prodej, poznámka; odesílá se přes frontu v telefonu. PDF se skládá v telefonu bez přepočtu fotky (`data/Pdf.kt`).
+- **Banka:** pohyby po měsících, Bez dokladu / Vyřešené, detail platby (datum, VS, protiúčet, historie), vyfotit nebo vybrat doklad k platbě (rovnou se připojí), rychlé odpovědi kanceláře, nahrání výpisu ze souboru. Fio token v aplikaci není – propojení nastavuje kancelář.
+- **Zabezpečení:** odemykání otiskem prstu (Android: BiometricPrompt + klíč v Android Keystore, kterým je zašifrované přihlášení; zamyká se po spuštění a po minutě na pozadí) a **přístupové klíče** (Credential Manager; stejné klíče jako na webu). Klient si vybere jedno, obojí, nebo nic. Přihlášení i uživatelským jménem.
+- iPhone: Face ID/Touch ID jen jako zámek (token zatím bez Keychainu), přístupové klíče zatím ne (potřeba účet Apple Developer).
+- **Stav:** napsáno, nesestaveno – sestavení na GitHubu; přihlášení klíčem potřebuje na serveru `ANDROID_APP_SHA256` (vypíše ho sestavení v Summary).
 
 ## Verze 1.4 – QR platba, kniha jízd (portál 1.12)
 

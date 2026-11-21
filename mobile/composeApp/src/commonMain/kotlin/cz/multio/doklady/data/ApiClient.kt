@@ -135,6 +135,12 @@ object Api {
 
     suspend fun me(): LoginResponse = call { client.get(url("/me")) { auth() } }
 
+    /** Načte znovu firmy a balíčky (změna balíčku na webu se projeví bez odhlášení). */
+    suspend fun refreshMe(): LoginResponse? = runCatching { me() }.getOrNull()?.also { res ->
+        KeyValueStore.put("me", json.encodeToString(LoginResponse.serializer(), res.copy(token = "")))
+        if (companyId == null || res.companies.none { it.id == companyId }) companyId = res.user.companyId ?: res.companies.firstOrNull()?.id
+    }
+
     fun cachedMe(): LoginResponse? =
         KeyValueStore.get("me")?.let { runCatching { json.decodeFromString(LoginResponse.serializer(), it) }.getOrNull() }
 
@@ -167,6 +173,7 @@ object Api {
         direction: String? = null,
         qr: String? = null,
         docType: String? = null,
+        categoryId: Int? = null,
     ): Document = call {
         client.submitFormWithBinaryData(
             url = url("/documents"),
@@ -193,6 +200,8 @@ object Api {
                 if (!qr.isNullOrBlank()) append("qr", qr)
                 // faktura | uctenka – u účtenek z režimu „Účtenky“ (1.5)
                 if (!docType.isNullOrBlank()) append("doc_type", docType)
+                // druh podle klienta (portál 1.15)
+                categoryId?.let { append("category_id", it.toString()) }
             },
         ) { auth(company) }
     }
@@ -361,6 +370,49 @@ object Api {
     suspend fun missing(): List<MissingItem> = call { client.get(url("/missing")) { auth() } }
 
     suspend fun documentChain(id: String): ChainInfo = call { client.get(url("/documents/$id/chain")) { auth() } }
+
+    // ---------------------------------------------------------------- druh dokladu podle klienta (portál 1.15)
+
+    private var categoriesCache: Pair<Int?, CategoriesInfo>? = null
+
+    /** Nabídka „Za co to je?“ (podle vedení firmy). Drží se v paměti pro aktuální firmu. */
+    suspend fun categories(refresh: Boolean = false): CategoriesInfo {
+        categoriesCache?.takeIf { !refresh && it.first == companyId }?.let { return it.second }
+        val info: CategoriesInfo = call { client.get(url("/categories")) { auth() } }
+        categoriesCache = companyId to info
+        return info
+    }
+
+    /** null = nechat na účetní. */
+    suspend fun setDocumentCategory(id: String, categoryId: Int?): Document = call {
+        client.patch(url("/documents/$id")) {
+            auth(); contentType(ContentType.Application.Json)
+            setBody(kotlinx.serialization.json.buildJsonObject { put("category_id", categoryId?.let { JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull) })
+        }
+    }
+
+    // ---------------------------------------------------------------- údaje firmy a asistent (portál 1.14)
+
+    suspend fun companyProfile(): CompanyProfileData = call { client.get(url("/company")) { auth() } }
+
+    /** Posílá jen měněná pole (ostatní zůstanou). */
+    suspend fun saveCompanyProfile(changes: kotlinx.serialization.json.JsonObject): CompanyProfileData = call {
+        client.put(url("/company")) { auth(); contentType(ContentType.Application.Json); setBody(changes) }
+    }
+
+    suspend fun assistant(): AssistantState = call { client.get(url("/assistant")) { auth(null) } }
+
+    suspend fun assistantAsk(question: String): AssistantReply = call {
+        client.post(url("/assistant")) { auth(null); contentType(ContentType.Application.Json); setBody(AssistantQuestion(question)) }
+    }
+
+    suspend fun assistantNew(): AssistantState = call {
+        client.post(url("/assistant")) { auth(null); contentType(ContentType.Application.Json); setBody(kotlinx.serialization.json.buildJsonObject { put("new", JsonPrimitive(true)) }) }
+    }
+
+    suspend fun assistantForward(question: String): AssistantForwardResult = call {
+        client.post(url("/assistant/forward")) { auth(null); contentType(ContentType.Application.Json); setBody(AssistantQuestion(question)) }
+    }
 
     // ---------------------------------------------------------------- přehled a banka (portál 1.13)
 
@@ -544,4 +596,69 @@ object Api {
         }
         return check(r).readRawBytes()
     }
+
+    // ---------------------------------------------------------------- žádost nového klienta (bez přihlášení, portál 1.16)
+
+    suspend fun applyOptions(): ApplyOptions = call { client.get(url("/apply/options")) }
+
+    suspend fun applyAres(ico: String): ApplyCompany = call { client.get(url("/apply/ares/${ico.filter { it.isDigit() }}")) }
+
+    suspend fun applyCode(email: String): ApplyCodeResult = call {
+        client.post(url("/apply/code")) {
+            contentType(ContentType.Application.Json)
+            setBody(kotlinx.serialization.json.buildJsonObject { put("email", JsonPrimitive(email.trim())) })
+        }
+    }
+
+    suspend fun applyVerify(requestId: String, code: String): ApplyVerifyResult = call {
+        client.post(url("/apply/verify")) {
+            contentType(ContentType.Application.Json)
+            setBody(kotlinx.serialization.json.buildJsonObject { put("request_id", JsonPrimitive(requestId)); put("code", JsonPrimitive(code.trim())) })
+        }
+    }
+
+    suspend fun applyPreview(body: kotlinx.serialization.json.JsonObject): ApplyResult = call {
+        client.post(url("/apply/preview")) { contentType(ContentType.Application.Json); setBody(body) }
+    }
+
+    suspend fun applySubmit(body: kotlinx.serialization.json.JsonObject): ApplyResult = call {
+        client.post(url("/apply")) { contentType(ContentType.Application.Json); setBody(body) }
+    }
+
+    // ---------------------------------------------------------------- podklady k přiznání (portál 1.16)
+
+    suspend fun taxPacks(): List<TaxPack> = call { client.get(url("/tax-packs")) { auth() } }
+
+    suspend fun taxPack(id: String): TaxPack = call { client.get(url("/tax-packs/$id")) { auth() } }
+
+    suspend fun taxPackUpload(packId: String, itemId: Int, data: ByteArray, mime: String, name: String, source: String, pages: Int): TaxPackItem = call {
+        client.submitFormWithBinaryData(
+            url = url("/tax-packs/$packId/items/$itemId/files"),
+            formData = formData {
+                append("source", source)
+                append("pages", pages.toString())
+                append("file", data, Headers.build {
+                    append(HttpHeaders.ContentType, mime)
+                    append(HttpHeaders.ContentDisposition, "filename=\"$name\"")
+                })
+            },
+        ) { auth() }
+    }
+
+    suspend fun taxPackValue(packId: String, itemId: Int, body: kotlinx.serialization.json.JsonObject): TaxPackItem = call {
+        client.patch(url("/tax-packs/$packId/items/$itemId")) { auth(); contentType(ContentType.Application.Json); setBody(body) }
+    }
+
+    suspend fun taxPackDeleteFile(packId: String, fileId: String) {
+        call<Detail> { client.delete(url("/tax-packs/$packId/files/$fileId")) { auth() } }
+    }
+
+    suspend fun taxPackFile(packId: String, fileId: String): ByteArray {
+        val r = try { client.get(url("/tax-packs/$packId/files/$fileId")) { auth() } } catch (e: Exception) {
+            throw ApiException("Server není dostupný.")
+        }
+        return check(r).readRawBytes()
+    }
+
+    suspend fun taxPackSubmit(packId: String): TaxPack = call { client.post(url("/tax-packs/$packId/submit")) { auth() } }
 }

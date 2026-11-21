@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -103,7 +104,10 @@ fun MainScreen(nav: Navigator) {
     var tab by rememberSaveable { mutableStateOf("home") }
     var bankFilter by rememberSaveable { mutableStateOf("all") }
     var companyId by remember { mutableStateOf(Api.companyId) }
-    val me = remember { Api.cachedMe() }
+    var me by remember { mutableStateOf(Api.cachedMe()) }
+    // balíček a firmy načíst znovu při každém otevření – změna na webu se projeví bez odhlášení
+    LaunchedEffect(Unit) { Api.refreshMe()?.let { me = it; companyId = Api.companyId } }
+    var lockedInfo by remember { mutableStateOf<Pair<String, String>?>(null) }
     val company = me?.companies?.firstOrNull { it.id == companyId }
     var openTasks by remember { mutableIntStateOf(0) }
     var missingBank by remember { mutableIntStateOf(0) }
@@ -147,12 +151,21 @@ fun MainScreen(nav: Navigator) {
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.Menu, "Menu") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            /** module = funkce balíčku; bez ní se položka ukáže se štítkem balíčku a po klepnutí vysvětlí. */
                             @Composable
-                            fun item(text: String, icon: ImageVector, screen: Screen) {
-                                DropdownMenuItem(text = { Text(text) }, leadingIcon = { Icon(icon, null) }, onClick = { menu = false; nav.push(screen) })
+                            fun item(text: String, icon: ImageVector, screen: Screen, module: String? = null) {
+                                val lockedIn = module?.let { company?.lockedIn(it) }
+                                DropdownMenuItem(
+                                    text = { Text(text, color = if (lockedIn != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface) },
+                                    leadingIcon = { Icon(icon, null, tint = if (lockedIn != null) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurfaceVariant) },
+                                    trailingIcon = lockedIn?.let { e -> @Composable { Tag(e) } },
+                                    onClick = { menu = false; if (lockedIn != null) lockedInfo = text to lockedIn else nav.push(screen) },
+                                )
                             }
-                            if (company?.has("invoicing") != false) item("Faktury", Icons.AutoMirrored.Outlined.ReceiptLong, Screen.Invoices)
-                            if (company?.has("trips") == true) item("Kniha jízd", Icons.Outlined.DirectionsCar, Screen.Trips)
+                            item("Faktury", Icons.AutoMirrored.Outlined.ReceiptLong, Screen.Invoices, "invoicing")
+                            item("Údaje firmy", Icons.Outlined.Business, Screen.CompanyProfile, "invoicing")
+                            item("Asistent", Icons.Outlined.AutoAwesome, Screen.Assistant, "assistant")
+                            item("Kniha jízd", Icons.Outlined.DirectionsCar, Screen.Trips, "trips")
                             item("Přehledy a dodavatelé", Icons.Outlined.BarChart, Screen.Reports)
                             item("Daň z příjmů", Icons.Outlined.Description, Screen.TaxList)
                             HorizontalDivider()
@@ -206,6 +219,16 @@ fun MainScreen(nav: Navigator) {
                 }
             }
         }
+    }
+
+    lockedInfo?.let { (feature, edition) ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { lockedInfo = null },
+            icon = { Icon(Icons.Outlined.Lock, null) },
+            title = { Text(feature) },
+            text = { Text("Tato funkce je součástí balíčku $edition" + (company?.edition?.let { " (máte $it)" } ?: "") + ". O rozšíření se domluvte se svou účetní kanceláří.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { lockedInfo = null }) { Text("Rozumím") } },
+        )
     }
 
     if (captureSheet) {
@@ -311,6 +334,7 @@ fun HomeTab(nav: Navigator, companyName: String?, onBank: () -> Unit, onDocs: ()
                         stat(c?.doneMonth, "Hotovo", highlight = true)
                     }
                 }
+                TaxPackCard(nav)
                 if (outbox.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     AppCard {
@@ -396,7 +420,7 @@ fun SettingsScreen(nav: Navigator) {
             Spacer(Modifier.height(16.dp))
             OutlinedButton(onClick = { nav.push(Screen.Security) }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Zabezpečení") }
             Spacer(Modifier.height(20.dp))
-            Text("Doklady 1.5.0 · portál Multio 1.13", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Doklady 1.8.0 · portál Multio 1.16", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

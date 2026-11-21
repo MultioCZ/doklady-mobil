@@ -35,6 +35,8 @@ data class OutboxItem(
     val qr: String? = null,
     /** faktura | uctenka (režim Účtenky) */
     val docType: String? = null,
+    /** Druh podle klienta (portál 1.15). */
+    val categoryId: Int? = null,
 )
 
 object Outbox {
@@ -66,6 +68,7 @@ object Outbox {
         direction: String? = null,
         qr: String? = null,
         docType: String? = null,
+        categoryId: Int? = null,
     ): OutboxItem = mutex.withLock {
         val now = Clock.System.now().toEpochMilliseconds()
         val id = "$now-${(1000..9999).random()}"
@@ -73,7 +76,7 @@ object Outbox {
         LocalFiles.write(orig, original)
         val proc = processed?.let { "outbox_${id}_processed".also { name -> LocalFiles.write(name, it) } }
         val item = OutboxItem(id, Api.companyId, orig, originalMime, originalName, proc, note, now,
-            stage = stage, costCenter = costCenter, job = job, direction = direction, qr = qr, docType = docType)
+            stage = stage, costCenter = costCenter, job = job, direction = direction, qr = qr, docType = docType, categoryId = categoryId)
         save(items + item)
         item
     }
@@ -99,6 +102,7 @@ object Outbox {
                 direction = item.direction,
                 qr = item.qr,
                 docType = item.docType,
+                categoryId = item.categoryId,
             )
             remove(item)
             doc

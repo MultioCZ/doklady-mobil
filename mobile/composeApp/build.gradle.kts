@@ -64,8 +64,8 @@ android {
         applicationId = "cz.multio.doklady"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 5
-        versionName = "1.5.0"
+        versionCode = 8
+        versionName = "1.8.0"
     }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }

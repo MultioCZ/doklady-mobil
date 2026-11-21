@@ -23,8 +23,15 @@ data class Company(
     @SerialName("has_profile") val hasProfile: Boolean = true,
     /** Moduly edice portálu (invoicing, invoicing_plus, …). Prázdné = starší server, vše povoleno. */
     val modules: List<String> = emptyList(),
+    /** Název edice (balíčku) portálu; null = bez edice (vše povoleno). Portál 1.14. */
+    val edition: String? = null,
+    /** {modul: nejlevnější balíček, který ho obsahuje} pro moduly, které firma nemá. */
+    val upgrade: Map<String, String> = emptyMap(),
 ) {
     fun has(module: String) = modules.isEmpty() || module in modules
+
+    /** null = funkce je v balíčku; jinak název balíčku, ve kterém je („Expert“). */
+    fun lockedIn(module: String): String? = if (has(module)) null else (upgrade[module] ?: "vyšší balíček")
 }
 
 @Serializable
@@ -87,6 +94,10 @@ data class Document(
     @SerialName("cost_center") val costCenter: String? = null,
     val job: String? = null,
     @SerialName("chain_id") val chainId: Int? = null,
+    /** Portál 1.15: druh podle klienta („Za co to je?“), návrh portálu a jestli ho ještě jde změnit. */
+    @SerialName("client_category") val clientCategory: CategoryOption? = null,
+    @SerialName("category_suggestion") val categorySuggestion: CategoryOption? = null,
+    @SerialName("category_editable") val categoryEditable: Boolean = false,
 ) {
     val isPdf get() = originalMime == "application/pdf"
     val isWorking get() = status == "processing" || status == "uploaded"
@@ -172,6 +183,11 @@ data class Invoice(
     @SerialName("document_id") val documentId: String? = null,
     /** Faktura vystavená, ale něco se nepovedlo (např. odeslání e-mailem). */
     val warning: String? = null,
+    @SerialName("payment_method") val paymentMethod: String? = null,
+    @SerialName("order_number") val orderNumber: String? = null,
+    @SerialName("cost_center") val costCenter: String? = null,
+    val job: String? = null,
+    @SerialName("show_qr") val showQr: Boolean = true,
 )
 
 @Serializable
@@ -185,6 +201,12 @@ data class InvoiceCreate(
     @SerialName("payment_method") val paymentMethod: String = "prevod",
     val note: String? = null,
     @SerialName("send_to") val sendTo: String? = null,
+    /** Portál 1.14: číslo objednávky (tiskne se), středisko a zakázka (jen pro účetnictví), QR kód, DUZP. */
+    @SerialName("order_number") val orderNumber: String? = null,
+    @SerialName("cost_center") val costCenter: String? = null,
+    val job: String? = null,
+    @SerialName("show_qr") val showQr: Boolean = true,
+    @SerialName("taxable_date") val taxableDate: String? = null,
 )
 
 @Serializable
@@ -591,3 +613,75 @@ data class PasskeyLoginRequest(val credential: JsonElement, val state: String)
 
 @Serializable
 data class PasskeyRegisterRequest(val credential: JsonElement, val state: String, val name: String)
+
+
+// ---------------------------------------------------------------- údaje firmy (portál 1.14)
+
+@Serializable
+data class CompanyProfileData(
+    val name: String? = null,
+    val ico: String? = null,
+    val dic: String? = null,
+    val street: String? = null,
+    val city: String? = null,
+    val zip: String? = null,
+    val country: String? = null,
+    @SerialName("vat_payer") val vatPayer: Boolean = false,
+    @SerialName("vat_period") val vatPeriod: String? = null,
+    @SerialName("bank_account") val bankAccount: String? = null,
+    val iban: String? = null,
+    @SerialName("registry_note") val registryNote: String? = null,
+    @SerialName("default_due_days") val defaultDueDays: Int? = null,
+    val email: String? = null,
+    /** Účet / IBAN je vyplněný tak, že jde vytvořit QR platbu. */
+    @SerialName("qr_ready") val qrReady: Boolean = false,
+)
+
+// ---------------------------------------------------------------- AI asistent (portál 1.14, balíček Expert)
+
+@Serializable
+data class AssistantRow(val label: String, val note: String? = null, val amount: String? = null)
+
+@Serializable
+data class AssistantTurn(
+    val id: Int,
+    val question: String,
+    @SerialName("created_at") val createdAt: String = "",
+    val legal: Boolean = false,
+    val help: Boolean = false,
+    val understood: String? = null,
+    val title: String? = null,
+    val answer: String? = null,
+    val rows: List<AssistantRow> = emptyList(),
+    val total: String? = null,
+    val net: Boolean = false,
+    val note: String? = null,
+    val examples: List<String> = emptyList(),
+)
+
+@Serializable
+data class AssistantState(val turns: List<AssistantTurn> = emptyList(), val suggestions: List<String> = emptyList())
+
+@Serializable
+data class AssistantReply(val turn: AssistantTurn, val suggestions: List<String> = emptyList())
+
+@Serializable
+data class AssistantQuestion(val question: String)
+
+@Serializable
+data class AssistantForwardResult(val ok: Boolean = false, val detail: String = "")
+
+
+// ---------------------------------------------------------------- druh dokladu podle klienta (portál 1.15)
+
+@Serializable
+data class CategoryOption(val id: Int, val name: String, val icon: String = "other", val explanation: String? = null, val reason: String? = null)
+
+@Serializable
+data class CategoriesInfo(
+    val enabled: Boolean = false,
+    @SerialName("locked_in") val lockedIn: String? = null,
+    val bookkeeping: String? = null,
+    val options: List<CategoryOption> = emptyList(),
+    val frequent: List<Int> = emptyList(),
+)

@@ -54,6 +54,13 @@ import androidx.compose.material3.Text
 
 sealed interface Screen {
     data class Login(val activationCode: String? = null) : Screen
+    /** Úvod bez přihlášení (1.8): Jsem klient / Chci se stát klientem. */
+    data object Welcome : Screen
+    /** Žádost nového klienta. */
+    data object Apply : Screen
+    /** Podklady k přiznání (portál 1.16). */
+    data class TaxPack(val id: String) : Screen
+    class TaxPackPages(val packId: String, val itemId: Int, val title: String, val pages: List<ByteArray>) : Screen
     data object Main : Screen
     /** preset = předvyplněný druh dokladu (např. dodací list, který chybí v cestě faktury). */
     data class Upload(val picked: PickedDocument, val preset: UploadPreset = UploadPreset()) : Screen
@@ -78,6 +85,9 @@ sealed interface Screen {
     data object Settings : Screen
     data object Invoices : Screen
     data object Reports : Screen
+    /** Údaje firmy pro faktury (účet, IBAN) a AI asistent – portál 1.14. */
+    data object CompanyProfile : Screen
+    data object Assistant : Screen
     data class NewInvoice(val state: NewInvoiceState = NewInvoiceState()) : Screen
     data class CustomerEdit(val customer: Customer?, val onSaved: (Customer) -> Unit) : Screen
     /** Seznam dodavatelů za období; label = název období („Říjen 2026“). */
@@ -99,7 +109,7 @@ class Navigator(start: Screen) {
 fun App() {
     DokladyTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            val nav = remember { Navigator(if (Api.token.isNullOrBlank() && !AppLock.locked) Screen.Login() else Screen.Main) }
+            val nav = remember { Navigator(if (Api.token.isNullOrBlank() && !AppLock.locked) Screen.Welcome else Screen.Main) }
             // odkaz z pozvánky (e-mail / QR) → aktivace portálu
             val link = IncomingLink.activationCode
             LaunchedEffect(link) {
@@ -120,7 +130,12 @@ fun App() {
             // stav (např. vybraná záložka) se uchová i po návratu ze detailu
             saveable.SaveableStateProvider("${nav.stack.lastIndex}-${s::class.simpleName}") {
             when (s) {
-                is Screen.Login -> LoginScreen(onLoggedIn = { nav.reset(Screen.Main) }, activationCode = s.activationCode)
+                is Screen.Login -> LoginScreen(onLoggedIn = { nav.reset(Screen.Main) }, activationCode = s.activationCode,
+                    onApply = { nav.push(Screen.Apply) })
+                Screen.Welcome -> cz.multio.doklady.ui.WelcomeScreen(nav)
+                Screen.Apply -> cz.multio.doklady.ui.ApplyScreen(nav)
+                is Screen.TaxPack -> cz.multio.doklady.ui.TaxPackScreen(nav, s.id)
+                is Screen.TaxPackPages -> cz.multio.doklady.ui.TaxPackPagesScreen(nav, s.packId, s.itemId, s.title, s.pages)
                 Screen.Main -> MainScreen(nav)
                 is Screen.Upload -> UploadScreen(nav, s.picked, s.preset)
                 is Screen.DocumentDetail -> DocumentDetailScreen(nav, s.id)
@@ -145,6 +160,8 @@ fun App() {
                     ExtendedFloatingActionButton(onClick = { nav.push(Screen.NewInvoice()) }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Nová faktura") })
                 }) { InvoicesTab(nav) }
                 Screen.Reports -> SimpleScreen(nav, "Přehledy") { ReportsTab(nav) }
+                Screen.CompanyProfile -> cz.multio.doklady.ui.CompanyProfileScreen(nav)
+                Screen.Assistant -> cz.multio.doklady.ui.AssistantScreen(nav)
             }
             }
         }
