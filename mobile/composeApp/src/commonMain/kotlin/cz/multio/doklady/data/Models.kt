@@ -27,7 +27,10 @@ data class Company(
     val edition: String? = null,
     /** {modul: nejlevnější balíček, který ho obsahuje} pro moduly, které firma nemá. */
     val upgrade: Map<String, String> = emptyMap(),
+    /** full | tax | annual – klient „jen přiznání“ / „roční zúčtování“ vidí jen své podklady (portál 1.17). */
+    val access: String = "full",
 ) {
+    val limited get() = access == "tax" || access == "annual"
     fun has(module: String) = modules.isEmpty() || module in modules
 
     /** null = funkce je v balíčku; jinak název balíčku, ve kterém je („Expert“). */

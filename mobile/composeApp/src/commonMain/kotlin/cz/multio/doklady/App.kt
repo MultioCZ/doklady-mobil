@@ -60,6 +60,9 @@ sealed interface Screen {
     data object Apply : Screen
     /** Podklady k přiznání (portál 1.16). */
     data class TaxPack(val id: String) : Screen
+    /** Zprávy účetní a seznam podkladů všech let (1.9). */
+    data object Messages : Screen
+    data object TaxPacks : Screen
     class TaxPackPages(val packId: String, val itemId: Int, val title: String, val pages: List<ByteArray>) : Screen
     data object Main : Screen
     /** preset = předvyplněný druh dokladu (např. dodací list, který chybí v cestě faktury). */
@@ -135,6 +138,8 @@ fun App() {
                 Screen.Welcome -> cz.multio.doklady.ui.WelcomeScreen(nav)
                 Screen.Apply -> cz.multio.doklady.ui.ApplyScreen(nav)
                 is Screen.TaxPack -> cz.multio.doklady.ui.TaxPackScreen(nav, s.id)
+                Screen.Messages -> cz.multio.doklady.ui.MessagesScreen(nav)
+                Screen.TaxPacks -> cz.multio.doklady.ui.TaxPacksScreen(nav)
                 is Screen.TaxPackPages -> cz.multio.doklady.ui.TaxPackPagesScreen(nav, s.packId, s.itemId, s.title, s.pages)
                 Screen.Main -> MainScreen(nav)
                 is Screen.Upload -> UploadScreen(nav, s.picked, s.preset)

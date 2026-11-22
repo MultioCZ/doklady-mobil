@@ -661,4 +661,45 @@ object Api {
     }
 
     suspend fun taxPackSubmit(packId: String): TaxPack = call { client.post(url("/tax-packs/$packId/submit")) { auth() } }
+
+    // ---------------------------------------------------------------- podklady 1.17: doplnění, výsledek, podání, zprávy
+
+    private fun obj(vararg pairs: Pair<String, kotlinx.serialization.json.JsonElement>) = kotlinx.serialization.json.JsonObject(pairs.toMap())
+
+    suspend fun taxPackAddItem(packId: String, title: String): TaxPackItem = call {
+        client.post(url("/tax-packs/$packId/items")) { auth(); contentType(ContentType.Application.Json); setBody(obj("title" to JsonPrimitive(title))) }
+    }
+
+    suspend fun taxPackAddSection(packId: String, incomes: List<String>, deductions: List<String>): TaxPack = call {
+        client.post(url("/tax-packs/$packId/sections")) {
+            auth(); contentType(ContentType.Application.Json)
+            setBody(obj("incomes" to JsonArray(incomes.map { JsonPrimitive(it) }), "deductions" to JsonArray(deductions.map { JsonPrimitive(it) })))
+        }
+    }
+
+    suspend fun taxPackFiling(packId: String, method: String, dsId: String): TaxPack = call {
+        client.post(url("/tax-packs/$packId/filing")) { auth(); contentType(ContentType.Application.Json); setBody(obj("method" to JsonPrimitive(method), "ds_id" to JsonPrimitive(dsId))) }
+    }
+
+    suspend fun taxPackApprove(packId: String): TaxPack = call { client.post(url("/tax-packs/$packId/approve")) { auth() } }
+
+    suspend fun taxPackHanded(packId: String): TaxPack = call { client.post(url("/tax-packs/$packId/handed")) { auth() } }
+
+    /** what = result/pdf | result/xml | result/receipt | zip | poa */
+    suspend fun taxPackDownload(packId: String, what: String): ByteArray {
+        val r = try { client.get(url("/tax-packs/$packId/$what")) { auth() } } catch (e: Exception) {
+            throw ApiException("Server není dostupný.")
+        }
+        return check(r).readRawBytes()
+    }
+
+    suspend fun messages(): List<OfficeMessage> = call { client.get(url("/messages")) { auth() } }
+
+    suspend fun sendMessage(body: String): List<OfficeMessage> = call {
+        client.post(url("/messages")) { auth(); contentType(ContentType.Application.Json); setBody(obj("body" to JsonPrimitive(body))) }
+    }
+
+    suspend fun upgradeRequest(note: String = ""): Detail = call {
+        client.post(url("/upgrade-request")) { auth(); contentType(ContentType.Application.Json); setBody(obj("note" to JsonPrimitive(note))) }
+    }
 }

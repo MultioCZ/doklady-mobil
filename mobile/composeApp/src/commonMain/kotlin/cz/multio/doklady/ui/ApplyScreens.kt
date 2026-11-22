@@ -225,13 +225,22 @@ private class ApplyForm {
     var children by mutableStateOf<String?>(null)
     var childrenOther by mutableStateOf<String?>(null)
     var consent by mutableStateOf(false)
+    // roční zúčtování (1.9) a podání (kdo podá, datová schránka)
+    var onlyEmployment by mutableStateOf<String?>(null)
+    var annualEmployers by mutableStateOf<String?>(null)
+    var annualDeclaration by mutableStateOf<String?>(null)
+    var whoFiles by mutableStateOf<String?>(null)
+    var hasDatabox by mutableStateOf<String?>(null)
 
-    val tax get() = service == "tax_return"
+    val annual get() = service == "annual"
+    val tax get() = service == "tax_return" || annual
+    val annualOk get() = onlyEmployment == "yes" && annualEmployers in setOf("one", "seq") && annualDeclaration == "yes"
 
     fun steps(): List<String> = buildList {
         add("service"); add("contact")
         if (service == "full") { add("business"); add("office") }
-        if (tax) {
+        if (annual) { add("annualcheck"); add("deductions") }
+        else if (tax) {
             add("situation")
             if ("employment" in incomes) add("employment")
             if ("contracts" in incomes) add("contracts")
@@ -260,6 +269,11 @@ private class ApplyForm {
         }
         "office" -> if (employees == null || bookkeeping == null || docs == null || vat == null) "Odpovězte na všechny otázky (jde i „Nevím“)." else null
         "situation" -> if (year == null || incomes.isEmpty()) "Vyberte rok a alespoň jeden druh příjmů." else null
+        "annualcheck" -> when {
+            year == null || onlyEmployment == null || annualEmployers == null || annualDeclaration == null -> "Odpovězte na všechny otázky."
+            !annualOk -> "Roční zúčtování podle odpovědí nejde – přepněte na daňové přiznání."
+            else -> null
+        }
         "employment" -> if (employers == null || declaration == null || abroad == null) "Odpovězte na všechny otázky (jde i „Nevím“)." else null
         "contracts" -> if (contracts.any { it.kind == null || it.declaration == null || it.limit == null }) "U každé dohody vyberte odpovědi (jde i „Nevím“)." else null
         "taxbusiness" -> if (bizMode == null || bizExpenses == null || revenue == null || advances.isEmpty() || interruption == null || overviews == null) "Odpovězte na všechny otázky." else null
@@ -272,7 +286,9 @@ private class ApplyForm {
         else -> null
     }
 
-    fun taxJson(): Map<String, kotlinx.serialization.json.JsonElement> = buildMap {
+    fun taxJson(): Map<String, kotlinx.serialization.json.JsonElement> = if (annual) annualJson() else buildMap {
+        put("service", JsonPrimitive("tax_return"))
+        put("who_files", JsonPrimitive(whoFiles ?: "later")); put("has_databox", JsonPrimitive(hasDatabox ?: "unknown"))
         put("year", JsonPrimitive(year ?: ""))
         put("incomes", JsonArray(incomes.map { JsonPrimitive(it) }))
         if ("employment" in incomes) put("employment", buildJsonObject {
@@ -289,13 +305,20 @@ private class ApplyForm {
         if ("children" in deductions) { put("children", JsonPrimitive(children?.removeSuffix("+")?.toIntOrNull() ?: 4)); put("children_other", JsonPrimitive(childrenOther ?: "")) }
     }
 
+    fun annualJson(): Map<String, kotlinx.serialization.json.JsonElement> = buildMap {
+        put("service", JsonPrimitive("annual")); put("year", JsonPrimitive(year ?: ""))
+        put("only_employment", JsonPrimitive(onlyEmployment ?: "")); put("employers", JsonPrimitive(annualEmployers ?: "")); put("declaration", JsonPrimitive(annualDeclaration ?: ""))
+        put("deductions", JsonArray(deductions.filter { it != "none" && it != "unknown" }.map { JsonPrimitive(it) }))
+        if ("children" in deductions) { put("children", JsonPrimitive(children?.removeSuffix("+")?.toIntOrNull() ?: 4)); put("children_other", JsonPrimitive(childrenOther ?: "unknown")) }
+    }
+
     fun json(token: String): JsonObject = JsonObject(buildMap {
         put("token", JsonPrimitive(token))
         put("service", JsonPrimitive(service ?: "full"))
         put("ico", JsonPrimitive(ico.filter { it.isDigit() }))
         put("contact_name", JsonPrimitive(contact.trim())); put("phone", JsonPrimitive(phone.trim()))
         put("note", JsonPrimitive(note.trim())); put("consent", JsonPrimitive(consent))
-        if (tax) putAll(taxJson())
+        if (tax) { putAll(taxJson()); put("service", JsonPrimitive(service ?: "tax_return")) }
         else {
             put("field", JsonPrimitive(field ?: "")); put("field_other", JsonPrimitive(fieldOther.trim())); put("description", JsonPrimitive(description.trim()))
             put("premises", JsonPrimitive(premises.trim())); put("website", JsonPrimitive(website.trim()))
@@ -378,7 +401,7 @@ fun ApplyScreen(nav: Navigator) {
         return
     }
 
-    val title = if (form.tax) "Žádost – přiznání" else "Žádost o vedení"
+    val title = if (form.annual) "Žádost – roční zúčtování" else if (form.tax) "Žádost – přiznání" else "Žádost o vedení"
     androidx.compose.material3.Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -405,8 +428,11 @@ fun ApplyScreen(nav: Navigator) {
                     Heading("O co máte zájem?")
                     BigChoice("Vedení po celý rok", "Účetnictví, daňová evidence nebo paušál", Icons.Outlined.Description, selected = form.service == "full") { form.service = "full" }
                     Spacer(Modifier.height(12.dp))
-                    BigChoice("Jen daňové přiznání", "Jednou za rok – zaměstnání, dohody, podnikání", Icons.Outlined.CheckCircle, selected = form.service == "tax_return") { form.service = "tax_return" }
-                    Spacer(Modifier.height(16.dp))
+                    BigChoice("Daňové přiznání", "Podnikání, pronájem, dohody, investice", Icons.Outlined.CheckCircle, selected = form.service == "tax_return") { form.service = "tax_return" }
+                    Spacer(Modifier.height(12.dp))
+                    BigChoice("Roční zúčtování", "Jen zaměstnání – vrácení daně přes zaměstnavatele", Icons.Outlined.CheckCircle, selected = form.service == "annual") { form.service = "annual" }
+                    Spacer(Modifier.height(12.dp))
+                    Hint("Nevíte? Vyberte roční zúčtování – podle 3 otázek poznáme, jestli stačí, a případně nabídneme přiznání.")
                 }
                 "contact" -> {
                     Heading("Kontakt")
@@ -467,6 +493,20 @@ fun ApplyScreen(nav: Navigator) {
                         }
                     }
                     Spacer(Modifier.height(8.dp))
+                }
+                "annualcheck" -> {
+                    Heading("Jen pár otázek")
+                    Question("Za rok"); ChoiceChips(t.years.filter { it != "older" }.map { Choice(it, it) }, form.year) { form.year = it }
+                    Question("Měli jste v roce jen příjmy ze zaměstnání?"); ChoiceChips(t.onlyEmployment, form.onlyEmployment) { form.onlyEmployment = it }
+                    Question("U kolika zaměstnavatelů najednou?"); ChoiceChips(t.annualEmployers, form.annualEmployers) { form.annualEmployers = it }
+                    Question("Podepsali jste u všech prohlášení k dani?"); ChoiceChips(t.yesNo, form.annualDeclaration) { form.annualDeclaration = it }
+                    val answered = form.onlyEmployment != null && form.annualEmployers != null && form.annualDeclaration != null
+                    if (answered && form.annualOk) Hint("Roční zúčtování můžete. Daň vám vrátí zaměstnavatel – žádost musí mít do 15. 2.")
+                    else if (answered) {
+                        Hint(rules?.noteAnnualCheck ?: "Roční zúčtování podle odpovědí nejde – potřebujete daňové přiznání.", amber = true)
+                        OutlinedButton(onClick = { form.service = "tax_return"; step = "situation" }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Přepnout na daňové přiznání") }
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
                 "employment" -> {
                     Heading("Pracovní poměr")
@@ -544,6 +584,10 @@ fun ApplyScreen(nav: Navigator) {
                         }
                     }
                     KeyValueCard(form)
+                    if (form.tax && !form.annual) {
+                        Question("Máte datovou schránku?"); ChoiceChips(t.hasDatabox.ifEmpty { t.yesNo }, form.hasDatabox) { form.hasDatabox = it }
+                        Question("Kdo přiznání podá?"); ChoiceChips(t.whoFiles, form.whoFiles) { form.whoFiles = it }
+                    }
                     if (form.tax) { Field("Poznámka pro účetní (nepovinné)", form.note, { form.note = it }, singleLine = false); Spacer(Modifier.height(10.dp)) }
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
                         Checkbox(form.consent, { form.consent = it })

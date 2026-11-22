@@ -1,4 +1,4 @@
-# Doklady – mobilní aplikace (Android + iPhone), verze 1.8
+# Doklady – mobilní aplikace (Android + iPhone), verze 1.9
 
 Mobilní aplikace je **portál** k vaší webové aplikaci. Vyfotí doklad, upraví ho (ořez, srovnání perspektivy,
 vyrovnání osvětlení) a uloží ho do webové aplikace. Zobrazí vytěžené náležitosti a přehledy a umí
@@ -10,6 +10,14 @@ mobile/    Kotlin Multiplatform + Compose Multiplatform – JEDEN kód pro Andro
 backend/   referenční API server (Python, FastAPI, PostgreSQL) – vzor pro vaši webovou aplikaci
 docs/      API.md = smlouva mezi aplikacemi, postgres_schema.sql = tabulky
 ```
+
+## Verze 1.9 – jen přiznání, roční zúčtování, podání a platba (portál 1.17)
+
+- **Omezený přístup:** klient „jen přiznání“ / „roční zúčtování“ vidí po přihlášení jen *Moje přiznání* (stav, co chybí, Doplnit podklady), menu Podklady · Napsat účetní · Hotová přiznání · Zabezpečení · Odhlásit a nabídku „Mám zájem“ o celý rok (žádost schvaluje kancelář).
+- **Žádost:** třetí volba *Roční zúčtování* se 3 otázkami; když nejde, tlačítko „Přepnout na daňové přiznání“. U přiznání otázky „Máte datovou schránku?“ a „Kdo přiznání podá?“.
+- **Podklady:** „Přidat jiný doklad“, „Přidat příjem nebo slevu“, doplnit jde i po odeslání; mazat soubor jen do převzetí účetní; ZIP všech podkladů.
+- **Výsledek:** časová osa, přeplatek/doplatek, PDF; volba „Podejte za mě datovou schránkou“ (ID schránky, plná moc PDF k podpisu a vyfocení) nebo „Podám sám“ (XML pro Moje daně); „Souhlasím (a zaplatit)“ – platba Comgate v prohlížeči, když ji kancelář zapne. Roční zúčtování: „Odevzdáno zaměstnavateli“.
+- **Napsat účetní:** jednoduché zprávy.
 
 ## Verze 1.8 – noví klienti a podklady k přiznání (portál 1.16)
 

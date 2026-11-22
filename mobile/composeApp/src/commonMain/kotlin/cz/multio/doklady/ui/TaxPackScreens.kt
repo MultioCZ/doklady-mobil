@@ -69,6 +69,7 @@ import cz.multio.doklady.data.TaxPackItem
 import cz.multio.doklady.platform.decodeImage
 import cz.multio.doklady.platform.openPdf
 import cz.multio.doklady.platform.shareFile
+import cz.multio.doklady.platform.openUrl
 import cz.multio.doklady.platform.rememberDocumentScanner
 import cz.multio.doklady.platform.rememberFilePicker
 import kotlinx.coroutines.Dispatchers
@@ -122,10 +123,21 @@ fun TaxPackScreen(nav: Navigator, id: String) {
     var editing by remember { mutableStateOf<TaxPackItem?>(null) }
     var confirmSubmit by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
+    var addOwn by remember { mutableStateOf(false) }
+    var addSection by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun load() {
         try { error = null; pack = Api.taxPack(id) } catch (e: Exception) { error = nav.errorText(e) }
+    }
+
+    fun download(what: String, name: String, mime: String) {
+        scope.launch {
+            try {
+                val bytes = Api.taxPackDownload(id, what)
+                if (mime == "application/pdf") openPdf(bytes, name) else shareFile(bytes, name, mime)
+            } catch (e: Exception) { error = nav.errorText(e) }
+        }
     }
     // návrat z kontroly fotek → načíst znovu
     LaunchedEffect(nav.stack.size) { if (nav.current is Screen.TaxPack) load() }
@@ -150,7 +162,8 @@ fun TaxPackScreen(nav: Navigator, id: String) {
     }
 
     val p = pack
-    SimpleScreen(nav, p?.let { "Podklady k přiznání ${it.year}" } ?: "Podklady k přiznání") {
+    SimpleScreen(nav, p?.let { (if (it.kind == "annual") "Roční zúčtování " else "Přiznání ") + it.year } ?: "Podklady",
+        actions = { TextButton(onClick = { download("zip", "podklady-${p?.year}.zip", "application/zip") }) { Text("ZIP") } }) {
         if (p == null) { if (error == null) Loading() else ErrorBanner(error) { scope.launch { load() } }; return@SimpleScreen }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
             val pr = p.progress
@@ -159,8 +172,16 @@ fun TaxPackScreen(nav: Navigator, id: String) {
                 "${pr.done} z ${pr.total}" + (czDateShort(p.deadline)?.let { " · prosíme do $it" } ?: "") + " · co nemáte, přeskočte a doplňte později",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
             )
-            if (p.state == "submitted") Hint("Odesláno účetní. Když něco doplníte, uvidí to.")
-            if (p.state == "done") Hint("Účetní podklady zpracovala. Další doklad pošlete přes Doklady nebo zprávou.")
+            if (p.purgedAt != null) Hint("Podklady jsme smazali podle dohody. Zůstalo přiznání, doručenka a váš souhlas.")
+            if (p.state != "open") ResultSection(p, busy = sending, onDownload = ::download,
+                onFiling = { method, ds -> scope.launch { try { error = null; pack = Api.taxPackFiling(id, method, ds) } catch (e: Exception) { error = nav.errorText(e) } } },
+                onApprove = { scope.launch {
+                    sending = true
+                    try { val r = Api.taxPackApprove(id); pack = r; r.paymentUrl?.let { openUrl(it) } } catch (e: Exception) { error = nav.errorText(e) } finally { sending = false }
+                } },
+                onHanded = { scope.launch { try { pack = Api.taxPackHanded(id) } catch (e: Exception) { error = nav.errorText(e) } } })
+            if (p.clientUpdatedAt != null && p.state != "open") Hint("Doplnili jste podklady po odeslání – účetní dostala upozornění." +
+                if (p.filedAt != null) " Přiznání už bylo podáno, účetní posoudí, zda je potřeba dodatečné přiznání." else "")
             ErrorBanner(error)
             p.groups.forEach { g ->
                 SectionTitle(g.title)
@@ -168,7 +189,7 @@ fun TaxPackScreen(nav: Navigator, id: String) {
                     g.items.forEachIndexed { i, it ->
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         PackItemRow(
-                            it, busy = busyItem == it.id, editable = p.editable,
+                            it, busy = busyItem == it.id, editable = p.editable, canDelete = p.canDeleteFiles,
                             onCamera = { target = it; scanner() },
                             onUpload = { target = it; picker() },
                             onEdit = { editing = it },
@@ -191,13 +212,20 @@ fun TaxPackScreen(nav: Navigator, id: String) {
                 }
             }
             if (p.editable) {
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = { addOwn = true }) { Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Přidat jiný doklad") }
+                if (p.kind == "tax" && p.addIncomes.isNotEmpty()) TextButton(onClick = { addSection = true }) {
+                    Icon(Icons.Outlined.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Přidat příjem nebo slevu, na kterou jsem zapomněl")
+                }
+            }
+            if (p.editable && p.state == "open") {
                 Spacer(Modifier.height(22.dp))
                 Button(enabled = !sending, onClick = { if (pr.missingRequired > 0) confirmSubmit = true else scope.launch {
                     sending = true
                     try { Api.taxPackSubmit(id); load() } catch (e: Exception) { error = nav.errorText(e) } finally { sending = false }
                 } }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                     if (sending) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                    else Text(if (p.state == "submitted") "Poslat účetní znovu" else "Odeslat účetní")
+                    else Text("Odeslat účetní")
                 }
                 Text("Fotky se neukládají do galerie telefonu – jen sem.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally))
@@ -212,6 +240,14 @@ fun TaxPackScreen(nav: Navigator, id: String) {
             onDismiss = { confirmSubmit = false },
         )
     }
+    if (addOwn) TextInputDialog("Přidat jiný doklad", "Např. Potvrzení o studiu dítěte", onDismiss = { addOwn = false }) { title ->
+        scope.launch { try { Api.taxPackAddItem(id, title); addOwn = false; load() } catch (e: Exception) { error = nav.errorText(e); addOwn = false } }
+    }
+    if (addSection) p?.let { pk ->
+        AddSectionDialog(pk, onDismiss = { addSection = false }) { inc, ded ->
+            scope.launch { try { pack = Api.taxPackAddSection(id, inc, ded); addSection = false } catch (e: Exception) { error = nav.errorText(e); addSection = false } }
+        }
+    }
     editing?.let { item ->
         ValueDialog(item, p?.rentExpenses.orEmpty(), onDismiss = { editing = null }) { body ->
             scope.launch {
@@ -223,7 +259,7 @@ fun TaxPackScreen(nav: Navigator, id: String) {
 
 @Composable
 private fun PackItemRow(
-    item: TaxPackItem, busy: Boolean, editable: Boolean,
+    item: TaxPackItem, busy: Boolean, editable: Boolean, canDelete: Boolean = editable,
     onCamera: () -> Unit, onUpload: () -> Unit, onEdit: () -> Unit,
     onOpen: (cz.multio.doklady.data.TaxPackFile) -> Unit, onDelete: (cz.multio.doklady.data.TaxPackFile) -> Unit,
 ) {
@@ -253,7 +289,7 @@ private fun PackItemRow(
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Zobrazit") }, leadingIcon = { Icon(Icons.Outlined.Visibility, null) }, onClick = { menu = false; onOpen(f) })
-                        if (editable) DropdownMenuItem(text = { Text("Smazat", color = MaterialTheme.colorScheme.error) },
+                        if (canDelete) DropdownMenuItem(text = { Text("Smazat", color = MaterialTheme.colorScheme.error) },
                             leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) }, onClick = { menu = false; onDelete(f) })
                     }
                 }
@@ -428,4 +464,108 @@ fun TaxPackPagesScreen(nav: Navigator, packId: String, itemId: Int, title: Strin
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp).align(Alignment.CenterHorizontally))
         }
     }
+}
+
+
+// ------------------------------------------------------------------------ 1.9: stav, výsledek, podání
+
+@Composable
+fun TimelineView(steps: List<cz.multio.doklady.data.TimelineStep>) {
+    Column(Modifier.padding(start = 4.dp)) {
+        steps.forEach { st ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 5.dp)) {
+                Surface(shape = androidx.compose.foundation.shape.CircleShape, color = if (st.done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(2.dp, if (st.done || st.now) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline), modifier = Modifier.size(14.dp)) {}
+                Spacer(Modifier.width(12.dp))
+                Text(st.label, style = MaterialTheme.typography.bodyMedium, fontWeight = if (st.done || st.now) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (st.done || st.now) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultSection(
+    p: TaxPack, busy: Boolean, onDownload: (String, String, String) -> Unit, onFiling: (String, String) -> Unit, onApprove: () -> Unit, onHanded: () -> Unit,
+) {
+    var method by remember(p.filingMethod) { mutableStateOf(p.filingMethod) }
+    var ds by remember(p.dsId) { mutableStateOf(p.dsId ?: "") }
+    AppCard(Modifier.padding(top = 10.dp, bottom = 4.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            TimelineView(p.timeline)
+            val r = p.result
+            if (r != null && r.pdf) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(if (p.kind == "annual") "Odhad vrácení" else "Výsledek", style = MaterialTheme.typography.labelLarge)
+                        Text(r.label + if (r.note.isNotBlank()) " · ${r.note}" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text((if (r.kind == "refund") "+ " else if (r.kind == "payment") "− " else "") + formatAmount(r.amount ?: "0") + " Kč",
+                        style = MaterialTheme.typography.headlineSmall, color = if (r.kind == "payment") Brand.Red else MaterialTheme.colorScheme.primary)
+                }
+                TextButton(onClick = { onDownload("result/pdf", if (p.kind == "annual") "zadost-rocni-zuctovani-${p.year}.pdf" else "priznani-${p.year}.pdf", "application/pdf") }) {
+                    Text(if (p.kind == "annual") "Žádost o roční zúčtování (PDF)" else "Přiznání (PDF)")
+                }
+                if (r.xml) TextButton(onClick = { onDownload("result/xml", "priznani-${p.year}.xml", "application/xml") }) { Text("Soubor pro Moje daně (XML)") }
+                if (r.receipt) TextButton(onClick = { onDownload("result/receipt", "dorucenka-${p.year}.zfo", "application/octet-stream") }) { Text("Doručenka") }
+            }
+            if (p.kind == "annual" && p.state == "ready") {
+                Text("1. Vytiskněte a podepište žádost.\n2. Odevzdejte ji mzdové účetní zaměstnavatele s přílohami.\n3. Nejpozději do 15. 2. – vrácení přijde ve výplatě.",
+                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 8.dp))
+                Button(onClick = onHanded, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Odevzdáno zaměstnavateli ✓") }
+            }
+            if (p.kind == "tax" && p.state == "ready") {
+                Spacer(Modifier.height(10.dp))
+                Question("Jak přiznání podat?")
+                ChoiceChips(listOf(Choice("ds", "Podejte ho za mě datovou schránkou"), Choice("self", "Podám sám (PDF a XML)")), method) { method = it }
+                if (method == "ds") {
+                    Field("ID vaší datové schránky (nepovinné)", ds, { ds = it.filter { c -> c.isLetterOrDigit() }.lowercase().take(7) })
+                    Text("Jen ID schránky (7 znaků). Přihlašovací jméno ani heslo nikdy nezadávejte.", style = MaterialTheme.typography.bodySmall,
+                        color = Brand.Amber, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp))
+                    TextButton(onClick = { onDownload("poa", "plna-moc-${p.year}.pdf", "application/pdf") }) { Text("Plná moc (PDF) – vytiskněte, podepište a vyfoťte do části Podání") }
+                }
+                if (method != null && (method != p.filingMethod || ds != (p.dsId ?: ""))) {
+                    OutlinedButton(onClick = { onFiling(method!!, ds) }, modifier = Modifier.fillMaxWidth().height(44.dp)) { Text("Uložit volbu") }
+                }
+                if (p.filingMethod != null && method == p.filingMethod) {
+                    Spacer(Modifier.height(8.dp))
+                    Button(enabled = !busy, onClick = onApprove, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                        Text(if (p.price != null) "Souhlasím a zaplatit ${formatAmount(p.price)} Kč" else if (p.filingMethod == "ds") "Souhlasím, můžete podat" else "Souhlasím")
+                    }
+                    Text("Před zaplacením si stáhněte podklady (ZIP nahoře) – po podání je smažeme.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+            if (p.state == "approved" && p.price != null && p.paidAt == null) Hint("Čekáme na potvrzení platby. Když jste zaplatili, objeví se tu do pár minut.")
+            else if (p.state == "approved" && p.filingMethod == "ds") Hint("Podáme datovou schránkou. Doručenka se objeví tady.")
+            if (p.result?.xml == true && p.filingMethod == "self") Text("Moje daně: mojedane.cz → Elektronické formuláře → Načíst ze souboru → Kontrola → Podat.",
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+}
+
+@Composable
+fun TextInputDialog(title: String, placeholder: String, onDismiss: () -> Unit, onOk: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) },
+        text = { Field("Název", text, { text = it }, placeholder = placeholder) },
+        confirmButton = { Button(enabled = text.isNotBlank(), onClick = { onOk(text.trim()) }) { Text("Přidat") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Zrušit") } })
+}
+
+@Composable
+private fun AddSectionDialog(p: TaxPack, onDismiss: () -> Unit, onOk: (List<String>, List<String>) -> Unit) {
+    val inc = remember { mutableStateListOf<String>() }
+    val ded = remember { mutableStateListOf<String>() }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Co přidat?") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Question("Příjmy"); MultiChips(p.addIncomes, inc)
+                Question("Slevy a odpočty"); MultiChips(p.addDeductions, ded)
+                Text("Přibudou jen nové položky, nic se nesmaže.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { Button(enabled = inc.isNotEmpty() || ded.isNotEmpty(), onClick = { onOk(inc.toList(), ded.toList()) }) { Text("Přidat") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Zrušit") } })
 }

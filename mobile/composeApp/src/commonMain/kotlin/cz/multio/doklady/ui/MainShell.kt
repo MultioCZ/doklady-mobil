@@ -115,6 +115,11 @@ fun MainScreen(nav: Navigator) {
     var companyMenu by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // klient „jen přiznání“ / „roční zúčtování“ (portál 1.17): jen moje přiznání, žádné Doklady ani Banka
+    if (company?.limited == true) {
+        LimitedHomeScreen(nav, company)
+        return
+    }
 
     val multiScanner = rememberDocumentScanner { picked -> picked?.let { nav.push(Screen.Upload(it)) } }
     val receiptScanner = rememberDocumentScanner(pageLimit = 30) { picked -> picked?.takeIf { it.pages.isNotEmpty() }?.let { nav.push(Screen.Receipts(it.pages)) } }
@@ -420,7 +425,7 @@ fun SettingsScreen(nav: Navigator) {
             Spacer(Modifier.height(16.dp))
             OutlinedButton(onClick = { nav.push(Screen.Security) }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Zabezpečení") }
             Spacer(Modifier.height(20.dp))
-            Text("Doklady 1.8.0 · portál Multio 1.16", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Doklady 1.9.0 · portál Multio 1.17", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
