@@ -3,6 +3,9 @@
 # Výsledek: APK pro Android ke stažení dole na stránce běhu (Artifacts → doklady-android).
 # Když sestavení selže, chyby překladu jsou vypsané v souhrnu běhu (Summary) – stačí je zkopírovat.
 # iOS se jen kontroluje a jen při ručním spuštění se zaškrtnutým „ios“ (Mac na GitHubu spotřebuje 10× víc minut).
+# 2.0: když jsou v Settings → Secrets and variables → Actions tajné proměnné KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS,
+# KEY_PASSWORD, vznikne navíc podepsaný balík pro Google Play (Artifacts → doklady-google-play, soubor .aab).
+# GOOGLE_SERVICES_JSON (obsah google-services.json z Firebase, zakódovaný base64) zapne upozornění v telefonu.
 name: Sestavení aplikace
 on:
   workflow_dispatch:
@@ -28,6 +31,10 @@ jobs:
           path: ~/.android/debug.keystore
           key: doklady-debug-keystore-v1
       - run: chmod +x gradlew
+      - name: Firebase (upozornění) – jen když je nastavená tajná proměnná
+        env: {GS: '${{ secrets.GOOGLE_SERVICES_JSON }}'}
+        if: env.GS != ''
+        run: echo "$GS" | base64 -d > composeApp/google-services.json
       - name: Sestavení (debug APK)
         run: |
           set -o pipefail
@@ -51,6 +58,31 @@ jobs:
         with:
           name: doklady-android
           path: mobile/composeApp/build/outputs/apk/debug/*.apk
+      - name: Podepsaný balík pro Google Play (jen s tajnými proměnnými KEYSTORE_*)
+        id: release
+        env:
+          KS: '${{ secrets.KEYSTORE_BASE64 }}'
+          KEYSTORE_PASSWORD: '${{ secrets.KEYSTORE_PASSWORD }}'
+          KEY_ALIAS: '${{ secrets.KEY_ALIAS }}'
+          KEY_PASSWORD: '${{ secrets.KEY_PASSWORD }}'
+        if: success() && env.KS != ''
+        run: |
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/release.jks"
+          export KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+          set -o pipefail
+          ./gradlew :composeApp:bundleRelease --stacktrace 2>&1 | tee release.log
+          FP=$(keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | grep -m1 'SHA256:' | sed 's/.*SHA256: //')
+          { echo '## Podepsaný balík pro Google Play'; echo 'Otisk klíče pro nahrání (upload key): `'"$FP"'`'; echo 'Do `.env` přidejte k ANDROID_APP_SHA256 (čárkou) otisk „App signing key“ z Google Play Console → Integrita aplikace.'; } >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$KEYSTORE_FILE"
+      - name: Chyby podepsaného sestavení do souhrnu
+        if: failure() && steps.release.outcome == 'failure'
+        run: |
+          { echo '## Chyby sestavení pro Google Play'; echo '```'; grep -E '^e: |error:|What went wrong|R8' -A2 release.log | head -150; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: success() && steps.release.outcome == 'success'
+        with:
+          name: doklady-google-play
+          path: mobile/composeApp/build/outputs/bundle/release/*.aab
   ios-compile:
     if: github.event_name == 'workflow_dispatch' && inputs.ios
     runs-on: macos-latest
