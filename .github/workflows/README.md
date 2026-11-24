@@ -11,6 +11,12 @@ backend/   referenční API server (Python, FastAPI, PostgreSQL) – vzor pro va
 docs/      API.md = smlouva mezi aplikacemi, postgres_schema.sql = tabulky
 ```
 
+## Verze 2.1 – režim Kancelář a náhled PDF (portál 2.2)
+
+- **Režim „Kancelář“** pro účetní a administrátora: Dnes k vyřízení (žádosti, zprávy, doplněné podklady, datová schránka), Klienti (hledání, klepnutím do účtu klienta s pruhem „Prohlížíte jako účetní · Zpět do kanceláře“), Zprávy s rychlými odpověďmi, Sezóna přiznání s připomenutím vybraným, Více (žádosti – přijmout / dotaz / odmítnout, datová schránka – zařadit ke klientovi s lhůtou).
+- **Náhled PDF přímo v detailu dokladu** (strany jako obrázek ze serveru, listování stránkami); tlačítko „Otevřít PDF“ zůstává.
+- Doklad nahraný k platbě: při jisté shodě ho portál potvrdí sám (stav platby „Spárováno“), jinak čeká na účetní.
+
 ## Verze 2.0 – do obchodů, upozornění, „Co se letos změnilo?“ (portál 2.0)
 
 - **Aktualizace:** při spuštění aplikace zjistí nejnovější verzi z portálu; nabídne aktualizaci, příliš stará verze se zastaví s výzvou (Správa → Mobilní aplikace).
